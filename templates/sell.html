@@ -40,7 +40,7 @@
                     <th scope="col"><span class="visually-hidden">Action</span></th>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="stagger">
                 {% for row in summary.rows %}
                     {% set dir, arrow, word = movement(row.gain_loss) %}
                     <tr>

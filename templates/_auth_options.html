@@ -1,0 +1,54 @@
+{# Shared sign-in controls for /login and /signup.
+
+   Google makes no distinction between signing up and signing in — the
+   first sign-in is what creates the account — so both pages offer the
+   same single button, and only the surrounding copy differs. #}
+
+{% if google_ready %}
+    <a class="btn btn-google btn-lg" href="{{ url_for('login_google') }}">
+        <svg class="g-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.7-2 5-4.4 6.6v5.500h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"/>
+            <path fill="#34A853" d="M24 46c6 0 11-2 14.6-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.5 2.1-5.8 0-10.7-3.9-12.4-9.1H4.3v5.7C7.9 41 15.4 46 24 46z"/>
+            <path fill="#FBBC05" d="M11.6 28.1c-.4-1.3-.7-2.7-.7-4.1s.2-2.8.7-4.1v-5.7H4.3C2.8 17.1 2 20.4 2 24s.8 6.9 2.3 9.8l7.3-5.7z"/>
+            <path fill="#EA4335" d="M24 10.8c3.3 0 6.2 1.1 8.5 3.3l6.3-6.3C35 4.3 30 2 24 2 15.4 2 7.9 7 4.3 14.2l7.3 5.7c1.7-5.2 6.6-9.1 12.4-9.1z"/>
+        </svg>
+        {{ button_label | default('Continue with Google') }}
+    </a>
+{% else %}
+    <div class="setup-note">
+        <h3>Google sign-in isn't configured yet</h3>
+        <p>Create an OAuth client and add the two values to your <code>.env</code>:</p>
+        <ol>
+            <li>Go to <strong>console.cloud.google.com</strong> → APIs &amp; Services</li>
+            <li><strong>OAuth consent screen</strong> → External → add your own email as a test user</li>
+            <li><strong>Credentials</strong> → Create credentials → OAuth client ID → Web application</li>
+            <li>Add this exact authorized redirect URI:
+                <code class="uri">{{ redirect_uri }}</code></li>
+            <li>Copy the client ID and secret into <code>.env</code>:
+                <pre>GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...</pre>
+            </li>
+        </ol>
+        <p class="faint">Restart the server afterwards to pick them up.</p>
+    </div>
+{% endif %}
+
+{% if dev_login %}
+    <div class="dev-note">
+        <h3>Local sign-in is enabled</h3>
+        <p>
+            <code>ALLOW_DEV_LOGIN</code> is set, so any email address gets you
+            in without Google. It checks nothing and proves nothing — it exists
+            so you can try the app before wiring up a Cloud Console project.
+            Unset it when you're done.
+        </p>
+        <form method="post" action="{{ url_for('login_dev') }}">
+            <div class="field">
+                <label for="dev-email">Email address</label>
+                <input type="email" id="dev-email" name="email"
+                       placeholder="you@example.com" required>
+            </div>
+            <button type="submit" class="btn btn-secondary">Sign in locally</button>
+        </form>
+    </div>
+{% endif %}

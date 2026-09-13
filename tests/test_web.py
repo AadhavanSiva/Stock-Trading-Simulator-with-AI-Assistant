@@ -15,24 +15,6 @@ from portfolio_tracker.services import market_data
 STARTING = Decimal("50000")
 
 
-@pytest.fixture
-def anon(db):
-    """A client with no session — signed out."""
-    web_module.app.config.update(TESTING=True)
-    with web_module.app.test_client() as c:
-        yield c
-
-
-@pytest.fixture
-def client(user):
-    """A client already signed in as the `user` fixture's account."""
-    web_module.app.config.update(TESTING=True)
-    with web_module.app.test_client() as c:
-        with c.session_transaction() as sess:
-            sess["user_id"] = user
-        yield c
-
-
 def quote(price, name="Test Company Inc."):
     value = Decimal(str(price)) if price is not None else None
     return patch.object(market_data, "get_quote", return_value=(value, name))
@@ -56,12 +38,33 @@ def text(response):
 
 class TestAuthGate:
     @pytest.mark.parametrize("path", [
-        "/", "/balance", "/buy", "/sell", "/history", "/actions",
+        "/balance", "/buy", "/sell", "/history", "/actions",
     ])
     def test_pages_require_signing_in(self, anon, path):
         response = anon.get(path)
         assert response.status_code == 302
         assert "/login" in response.headers["Location"]
+
+    def test_the_front_door_is_a_landing_page_when_signed_out(self, anon):
+        """`/` must welcome a stranger, not bounce them to a login form."""
+        response = anon.get("/")
+        assert response.status_code == 200
+        body = text(response)
+        assert "Get started" in body
+        assert "I already have an account" in body
+
+    def test_landing_page_offers_both_doors(self, anon):
+        body = text(anon.get("/"))
+        assert 'href="/signup"' in body
+        assert 'href="/login"' in body
+
+    def test_signup_page_renders(self, anon):
+        assert "Create your account" in text(anon.get("/signup"))
+
+    def test_signup_redirects_to_the_portfolio_when_already_signed_in(self, client):
+        response = client.get("/signup")
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/")
 
     @pytest.mark.parametrize("path", [
         "/buy/lookup", "/buy/review", "/buy/confirm",
@@ -79,7 +82,8 @@ class TestAuthGate:
 
     def test_login_page_renders(self, anon):
         body = text(anon.get("/login"))
-        assert "Practice investing" in body
+        assert "Log in" in body
+        assert "Create an account" in body
 
     def test_login_page_explains_setup_when_google_is_unconfigured(self, anon):
         body = text(anon.get("/login"))
@@ -91,7 +95,9 @@ class TestAuthGate:
 
     def test_logout_clears_the_session(self, client):
         client.get("/logout")
-        assert client.get("/").status_code == 302
+        # Signed out, `/` shows the landing page rather than the portfolio.
+        assert "Get started" in text(client.get("/"))
+        assert client.get("/balance").status_code == 302
 
     def test_session_pointing_at_a_deleted_account_is_cleared(self, client, user):
         from portfolio_tracker.db import cursor

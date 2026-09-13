@@ -48,7 +48,7 @@
                     <th scope="col" class="align-right">Gain or loss</th>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="stagger">
                 {% for row in summary.rows %}
                     {% set dir, arrow, word = movement(row.gain_loss) %}
                     <tr>
@@ -127,7 +127,7 @@
         <a class="btn btn-quiet" href="{{ url_for('actions') }}">Refresh prices</a>
     </div>
 
-    <div class="glossary">
+    <div class="glossary reveal">
         <h3>What these words mean</h3>
         <dl>
             <dt>Shares</dt>

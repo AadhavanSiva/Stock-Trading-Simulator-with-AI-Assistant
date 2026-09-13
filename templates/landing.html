@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Portfolio Tracker · Learn how investing works{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <p class="eyebrow">Practice portfolio</p>
+    <h1>Learn how investing works, <span class="underline">without risking anything</span>.</h1>
+    <p class="lede">
+        Start with ${{ '{:,.0f}'.format(starting_cash) }} of pretend money. Buy
+        and sell real companies at real market prices, and watch what your
+        decisions actually do over time.
+    </p>
+    <div class="actions-row">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Get started</a>
+        <a class="btn btn-secondary btn-lg" href="{{ url_for('login') }}">I already have an account</a>
+    </div>
+</section>
+
+<div class="hero-figure reveal">
+    <div class="total-label">A portfolio, a few weeks in</div>
+    <div class="hero-row">
+        <span>Cash available</span><span class="numeric">$46,677.30</span>
+    </div>
+    <div class="hero-row">
+        <span>Value of investments</span><span class="numeric">$3,621.15</span>
+    </div>
+    <div class="hero-row">
+        <strong>Total account value</strong>
+        <span class="change change-gain">
+            <span class="arrow" aria-hidden="true">▲</span>
+            <strong class="numeric">$50,298.45</strong>
+            <span class="change-label">up</span>
+        </span>
+    </div>
+    <p class="faint" style="margin:.9rem 0 0">An example, not your account.</p>
+</div>
+
+<section class="section">
+    <div class="section-head reveal">
+        <p class="eyebrow">How it works</p>
+        <h2>Three steps, no jargon</h2>
+    </div>
+
+    <div class="steps stagger">
+        <div class="step card-lift">
+            <div class="step-num">1</div>
+            <h3>Pick a company</h3>
+            <p>
+                Type a ticker — AAPL for Apple, MSFT for Microsoft. You'll see
+                the company's name and what one share costs right now.
+            </p>
+        </div>
+        <div class="step card-lift">
+            <div class="step-num">2</div>
+            <h3>Buy some shares</h3>
+            <p>
+                Decide how much to spend. You can buy part of a share, and
+                you'll always see the total before anything is confirmed.
+            </p>
+        </div>
+        <div class="step card-lift">
+            <div class="step-num">3</div>
+            <h3>Watch what happens</h3>
+            <p>
+                Prices move. Your portfolio shows what you paid, what it's
+                worth today, and whether you're up or down.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head reveal">
+        <p class="eyebrow">Why bother</p>
+        <h2>The habits matter more than the returns</h2>
+    </div>
+    <div class="card reveal">
+        <p class="muted" style="max-width:58ch">
+            Most people learn about investing by losing money slowly. A practice
+            portfolio lets you make the same mistakes for free — buying something
+            you don't understand, selling in a panic, checking the price six times
+            a day — and notice how each one feels before it costs you anything.
+        </p>
+        <ul class="perk-list">
+            <li><span class="tick" aria-hidden="true">✓</span> Real market prices, so the lesson is real</li>
+            <li><span class="tick" aria-hidden="true">✓</span> Plain language — every term explained where it appears</li>
+            <li><span class="tick" aria-hidden="true">✓</span> Nothing to lose, and nothing to pay</li>
+        </ul>
+        <div class="actions-row">
+            <a class="btn btn-primary" href="{{ url_for('signup') }}">Start with ${{ '{:,.0f}'.format(starting_cash) }}</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

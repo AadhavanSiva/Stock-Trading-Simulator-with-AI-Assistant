@@ -58,7 +58,9 @@ portfolio_tracker/
     reports.py             terminal rendering
     cli.py                 terminal front end
 web.py                     web front end (routes + templates)
-templates/  static/        Jinja templates and CSS
+templates/                 Jinja templates
+static/style.css           all styling, including the motion layer
+static/reveal.js           scroll-reveal fallback for Safari and Firefox
 ```
 
 The rule is one-directional: routes and menu handlers call `operations`, which
@@ -66,6 +68,30 @@ calls `models` and `services`. No SQL and no market-data calls appear in a route
 handler or a CLI prompt. `operations.py` returns plain values and never prints or
 renders, which is what lets the terminal and the browser share it without either
 one bending to suit the other.
+
+## Motion
+
+Scroll-driven animation is done natively with CSS `animation-timeline: view()`
+and `scroll()`, behind `@supports`. Chrome and Edge run it in the compositor
+with no JavaScript at all; `static/reveal.js` adds an IntersectionObserver
+fallback for Safari and Firefox, and bows out entirely where the CSS already
+works.
+
+Three rules hold it together:
+
+- **Content is never gated.** Every element's default state is its *final*
+  state. The only rules that set `opacity: 0` live under `.js-reveal`, a class
+  that JavaScript adds only after confirming it can finish the job — so with
+  JavaScript off, nothing is ever hidden.
+- **`prefers-reduced-motion: reduce` disables all of it**, including smooth
+  scrolling, and pins every element to its finished position.
+- **Only `transform` and `opacity` animate.** Nothing touches width, height,
+  top or margin, which force reflow and drop frames.
+
+Intensity is set per page via `data-motion` on `<body>`: `lively` on the
+landing and sign-in pages, `calm` on the portfolio, balance and history views
+where numbers are being read. Forms are deliberately excluded — nothing moves
+while you are filling one in.
 
 ## Setup
 

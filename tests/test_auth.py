@@ -13,13 +13,6 @@ from portfolio_tracker import config
 from portfolio_tracker.models import users
 
 
-@pytest.fixture
-def anon(db):
-    web_module.app.config.update(TESTING=True)
-    with web_module.app.test_client() as c:
-        yield c
-
-
 def configured():
     """Pretend GOOGLE_CLIENT_ID / SECRET are present in .env."""
     return patch.object(config, "google_configured", return_value=True)
@@ -93,7 +86,8 @@ class TestCallback:
         with configured(), google_returns(self.CLAIMS):
             response = anon.get("/auth/callback", follow_redirects=True)
 
-        assert "Signed in as ann@example.com" in text(response)
+        # A first-ever sign-in is a sign-up, and says so.
+        assert "Your account is ready" in text(response)
         account = users.get_by_email("ann@example.com")
         assert account is not None
         assert account[1] == "google-sub-123"
@@ -117,6 +111,15 @@ class TestCallback:
             anon.get("/logout")
             anon.get("/auth/callback")
         assert len(users.list_users()) == 1
+
+    def test_a_returning_user_is_greeted_as_such_not_welcomed_again(self, anon):
+        with configured(), google_returns(self.CLAIMS):
+            anon.get("/auth/callback")
+            anon.get("/logout")
+            response = anon.get("/auth/callback", follow_redirects=True)
+        body = text(response)
+        assert "Signed in as ann@example.com" in body
+        assert "Your account is ready" not in body
 
     def test_a_changed_email_does_not_create_a_second_account(self, anon):
         """Identity is Google's `sub`. Emails change; accounts should not."""

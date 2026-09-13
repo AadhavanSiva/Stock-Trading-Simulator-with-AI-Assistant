@@ -27,6 +27,21 @@ def _admin_connection():
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_auth_config(monkeypatch):
+    """Pin the auth settings so tests never depend on the local .env.
+
+    Once real GOOGLE_CLIENT_ID/SECRET values exist on a machine, anything
+    asserting on the unconfigured state starts failing there and passing
+    in CI, or the other way round. Every test starts from "no Google, no
+    dev login"; the ones that need credentials patch them in themselves.
+    """
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", None)
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", None)
+    monkeypatch.setattr(config, "ALLOW_DEV_LOGIN", False)
+    monkeypatch.setattr(config, "PORTFOLIO_USER", None)
+
+
 @pytest.fixture(scope="session")
 def test_database():
     """Create the test database once per run and point config at it."""
@@ -104,6 +119,28 @@ def seeded(user):
     stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("200.00"))
     stocks.upsert_stock("MSFT", "Microsoft", Decimal("400.00"))
     return user
+
+
+@pytest.fixture
+def anon(db):
+    """A web client with no session — signed out."""
+    import web as web_module
+
+    web_module.app.config.update(TESTING=True)
+    with web_module.app.test_client() as c:
+        yield c
+
+
+@pytest.fixture
+def client(user):
+    """A web client already signed in as the `user` fixture's account."""
+    import web as web_module
+
+    web_module.app.config.update(TESTING=True)
+    with web_module.app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess["user_id"] = user
+        yield c
 
 
 def rows(table="portfolio"):

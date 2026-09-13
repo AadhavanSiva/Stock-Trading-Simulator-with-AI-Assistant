@@ -1,63 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Sign in · Portfolio Tracker{% endblock %}
+{% block title %}Log in · Portfolio Tracker{% endblock %}
 
 {% block content %}
-<div class="card signin">
-    <div class="empty-mark" aria-hidden="true">🌱</div>
-    <h1>Practice investing, safely</h1>
-    <p class="lede">
-        Every account starts with ${{ '{:,.0f}'.format(starting_cash) }} in
-        pretend money. Buy and sell real companies at real market prices, and
-        watch how your decisions play out — without risking anything.
-    </p>
-
-    {% if google_ready %}
-        <div class="actions-row">
-            <a class="btn btn-primary" href="{{ url_for('login_google') }}">
-                Continue with Google
-            </a>
+<div class="auth-shell">
+    <div class="card">
+        <div class="auth-head">
+            <p class="eyebrow">Welcome back</p>
+            <h1>Log in</h1>
+            <p>Pick up where you left off.</p>
         </div>
-        <p class="faint">
-            We only ask Google for your name and email address, to tell your
-            portfolio apart from anyone else's.
+
+        {% with button_label = 'Continue with Google' %}
+            {% include "_auth_options.html" %}
+        {% endwith %}
+
+        <p class="auth-note">
+            Use the same Google account you signed up with — that's what your
+            portfolio is tied to.
         </p>
-    {% else %}
-        <div class="setup-note">
-            <h3>Google sign-in isn't set up yet</h3>
-            <p>To enable it, create an OAuth client and add the two values to your <code>.env</code>:</p>
-            <ol>
-                <li>Go to <strong>console.cloud.google.com</strong> → APIs &amp; Services</li>
-                <li><strong>OAuth consent screen</strong> → External → add your own email as a test user</li>
-                <li><strong>Credentials</strong> → Create credentials → OAuth client ID → Web application</li>
-                <li>Add this exact authorized redirect URI:
-                    <code class="uri">{{ redirect_uri }}</code></li>
-                <li>Copy the client ID and secret into <code>.env</code>:
-                    <pre>GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...</pre>
-                </li>
-            </ol>
-            <p class="faint">Restart the server afterwards to pick them up.</p>
-        </div>
-    {% endif %}
 
-    {% if dev_login %}
-        <div class="dev-note">
-            <h3>Local sign-in is enabled</h3>
-            <p>
-                <code>ALLOW_DEV_LOGIN</code> is set, so you can sign in with any
-                email address without Google. This is for trying the app on your
-                own machine — it checks nothing and proves nothing. Unset it when
-                you're done.
-            </p>
-            <form method="post" action="{{ url_for('login_dev') }}">
-                <div class="field">
-                    <label for="email">Email address</label>
-                    <input type="email" id="email" name="email"
-                           placeholder="you@example.com" required>
-                </div>
-                <button type="submit" class="btn btn-secondary">Sign in locally</button>
-            </form>
-        </div>
-    {% endif %}
+        <p class="auth-alt">
+            New here? <a href="{{ url_for('signup') }}">Create an account</a>
+        </p>
+    </div>
 </div>
 {% endblock %}

@@ -6,30 +6,46 @@
     <title>{% block title %}Portfolio Tracker{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="data:,">
+    {# Loaded in the head, unminified and tiny, so the reveal class is set
+       before first paint. Without it nothing is hidden — the page just
+       renders finished. #}
+    <script src="{{ url_for('static', filename='reveal.js') }}"></script>
 </head>
-<body>
+<body data-motion="{{ motion | default('calm') }}">
+
+{# Scroll progress. Self-gating: with nothing to scroll the bar stays at
+   scaleX(0) and is invisible, so short pages never show it. #}
+<div class="scroll-progress" aria-hidden="true"></div>
+
 <header class="masthead">
     <div class="masthead-inner">
-        <a class="wordmark" href="{{ url_for('index') }}">Portfolio <span>Tracker</span></a>
+        <a class="wordmark" href="{{ url_for('index') }}">
+            <span class="wordmark-mark" aria-hidden="true"></span>
+            Portfolio <em>Tracker</em>
+        </a>
 
         {% if current_user %}
             <nav class="nav">
-                <a href="{{ url_for('index') }}"        {% if active == 'portfolio' %}class="is-active"{% endif %}>My portfolio</a>
+                <a href="{{ url_for('index') }}"        {% if active == 'portfolio' %}class="is-active"{% endif %}>Portfolio</a>
                 <a href="{{ url_for('balance') }}"      {% if active == 'balance' %}class="is-active"{% endif %}>Balance</a>
                 <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active"{% endif %}>Buy</a>
                 <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active"{% endif %}>Sell</a>
-                <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active"{% endif %}>Price history</a>
-                <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active"{% endif %}>Update data</a>
+                <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active"{% endif %}>History</a>
+                <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active"{% endif %}>Update</a>
             </nav>
 
             <div class="account">
-                <a class="cash-chip" href="{{ url_for('balance') }}"
-                   title="Cash available to invest">
+                <a class="cash-chip" href="{{ url_for('balance') }}" title="Cash available to invest">
                     <span class="cash-label">Cash</span>
                     <span class="cash-figure">{{ current_user.cash | money }}</span>
                 </a>
                 <span class="account-name">{{ current_user.display_name }}</span>
                 <a class="signout" href="{{ url_for('logout') }}">Sign out</a>
+            </div>
+        {% else %}
+            <div class="account">
+                <a class="signout" href="{{ url_for('login') }}">Log in</a>
+                <a class="btn btn-primary btn-sm" href="{{ url_for('signup') }}">Get started</a>
             </div>
         {% endif %}
     </div>
@@ -49,6 +65,8 @@
     {% block content %}{% endblock %}
 </main>
 
-<p class="footer">Practice portfolio · prices from Yahoo Finance · nothing here is financial advice</p>
+<footer class="footer">
+    <p>Practice portfolio · live prices from Yahoo Finance · nothing here is financial advice</p>
+</footer>
 </body>
 </html>

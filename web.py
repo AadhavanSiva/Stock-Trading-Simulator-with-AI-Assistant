@@ -101,6 +101,18 @@ def finish_login(user_id, message):
     return redirect(destination)
 
 
+def _entry_page(template, motion="lively"):
+    """Render one of the signed-out doors (landing, sign up, log in)."""
+    return render_template(
+        template,
+        motion=motion,
+        google_ready=config.google_configured(),
+        dev_login=config.ALLOW_DEV_LOGIN,
+        redirect_uri=url_for("auth_callback", _external=True),
+        starting_cash=users.starting_cash(),
+    )
+
+
 @app.route("/login")
 def login():
     if session.get("user_id"):
@@ -112,13 +124,19 @@ def login():
     if destination:
         session["next"] = destination
 
-    return render_template(
-        "login.html",
-        google_ready=config.google_configured(),
-        dev_login=config.ALLOW_DEV_LOGIN,
-        redirect_uri=url_for("auth_callback", _external=True),
-        starting_cash=users.starting_cash(),
-    )
+    return _entry_page("login.html")
+
+
+@app.route("/signup")
+def signup():
+    """Same Google flow as /login, framed for someone arriving new.
+
+    Google draws no distinction between the two — the first sign-in is
+    what creates the account — so this differs in copy, not mechanism.
+    """
+    if session.get("user_id"):
+        return redirect(url_for("index"))
+    return _entry_page("signup.html")
 
 
 @app.route("/login/google")
@@ -146,12 +164,19 @@ def auth_callback():
         flash("Google did not return an account id. Sign-in cancelled.", "error")
         return redirect(url_for("login"))
 
+    returning = users.get_by_google_sub(claims["sub"]) is not None
     account = users.upsert_from_google(
         claims["sub"], claims.get("email", ""), claims.get("name")
     )
-    return finish_login(
-        account[0], f"Signed in as {claims.get('email', 'your account')}."
-    )
+
+    if returning:
+        message = f"Signed in as {claims.get('email', 'your account')}."
+    else:
+        message = (
+            f"Welcome. Your account is ready with "
+            f"${users.starting_cash():,.0f} of practice money."
+        )
+    return finish_login(account[0], message)
 
 
 @app.route("/login/dev", methods=["POST"])
@@ -239,9 +264,23 @@ app.jinja_env.globals["movement"] = movement
 # -------------------------------------------------------------- portfolio
 
 @app.route("/")
-@login_required
 def index():
-    return render_template("portfolio.html", summary=operations.account_summary(g.user_id))
+    """The front door: a landing page when signed out, the portfolio when in."""
+    if not session.get("user_id"):
+        return _entry_page("landing.html")
+
+    account = users.get_by_id(session["user_id"])
+    if account is None:
+        session.clear()
+        flash("That account no longer exists. Please sign in again.", "notice")
+        return redirect(url_for("login"))
+
+    g.user, g.user_id = account, account[0]
+    return render_template(
+        "portfolio.html",
+        motion="calm",
+        summary=operations.account_summary(g.user_id),
+    )
 
 
 @app.route("/balance")

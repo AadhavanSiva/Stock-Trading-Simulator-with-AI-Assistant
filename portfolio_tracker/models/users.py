@@ -43,6 +43,24 @@ def get_by_id(user_id):
         return cur.fetchone()
 
 
+def get_by_google_sub(google_sub):
+    """Look up an account by Google's subject claim.
+
+    Used to tell a first-ever sign-in from a returning one, so the welcome
+    can be honest about which it is. Google itself draws no distinction
+    between signing up and logging in — the first sign-in is the sign-up.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, google_sub, email, display_name, cash
+            FROM users WHERE google_sub = %s
+            """,
+            (google_sub,),
+        )
+        return cur.fetchone()
+
+
 def get_by_email(email):
     with cursor() as cur:
         cur.execute(

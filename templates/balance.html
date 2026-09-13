@@ -13,7 +13,7 @@
 </div>
 
 <div class="card">
-    <div class="balance-grid">
+    <div class="balance-grid reveal">
         <div class="balance-part">
             <div class="total-label">Cash available</div>
             <div class="balance-figure">{{ summary.cash | money }}</div>
@@ -66,7 +66,7 @@
                     <th scope="col" class="align-right">Gain or loss</th>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="stagger">
                 {% for row in summary.rows %}
                     {% set dir, arrow, word = movement(row.gain_loss) %}
                     <tr>
@@ -112,7 +112,7 @@
     </div>
 {% endif %}
 
-<div class="glossary">
+<div class="glossary reveal">
     <h3>What these words mean</h3>
     <dl>
         <dt>Cash available</dt>
