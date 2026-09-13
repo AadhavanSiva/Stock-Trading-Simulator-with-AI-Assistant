@@ -223,6 +223,177 @@
         });
     });
 
+    /* ------------------------------------------------------------ assistant
+     * Turns the "Ask" link into a drawer. Without JavaScript, the link and
+     * the form both go to the full /assistant page, so nothing here is
+     * required.
+     *
+     * Model output is only ever placed with textContent. It is text from an
+     * external service and must never be parsed as HTML.
+     */
+    document.addEventListener("DOMContentLoaded", function () {
+        var drawer = document.querySelector("[data-assistant]");
+        var toggle = document.querySelector("[data-assistant-toggle]");
+        if (!drawer || !toggle || !("fetch" in window)) return;
+
+        var log = drawer.querySelector("[data-assistant-log]");
+        var form = drawer.querySelector("[data-assistant-form]");
+        var field = form.querySelector("textarea");
+        var submit = form.querySelector('button[type="submit"]');
+        var starters = drawer.querySelector("[data-assistant-starters]");
+        var closeButton = drawer.querySelector("[data-assistant-close]");
+        var symbol = drawer.dataset.symbol || "";
+        var STORE = "assistant-transcript";
+        var transcript = load();
+        var busy = false;
+
+        transcript.forEach(function (turn) { render(turn.question, turn.answer, false); });
+        if (transcript.length && starters) starters.hidden = true;
+
+        function load() {
+            try {
+                var saved = JSON.parse(sessionStorage.getItem(STORE) || "[]");
+                return Array.isArray(saved) ? saved.slice(-10) : [];
+            } catch (e) { return []; }
+        }
+        function save() {
+            try { sessionStorage.setItem(STORE, JSON.stringify(transcript.slice(-10))); }
+            catch (e) { /* private mode or full: the drawer still works */ }
+        }
+
+        function open() {
+            drawer.hidden = false;
+            toggle.setAttribute("aria-expanded", "true");
+            // One frame with the drawer displayed, so the slide has a start.
+            requestAnimationFrame(function () { drawer.classList.add("is-open"); });
+            field.focus();
+            log.scrollTop = log.scrollHeight;
+        }
+        function close() {
+            drawer.classList.remove("is-open");
+            toggle.setAttribute("aria-expanded", "false");
+            var done = function () { drawer.hidden = true; };
+            if (reduced) done(); else setTimeout(done, 260);
+            toggle.focus();
+        }
+
+        toggle.addEventListener("click", function (event) {
+            event.preventDefault();
+            if (drawer.hidden) open(); else close();
+        });
+        closeButton.addEventListener("click", close);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !drawer.hidden) close();
+        });
+
+        if (starters) {
+            Array.prototype.forEach.call(starters.querySelectorAll("[data-starter]"), function (button) {
+                button.addEventListener("click", function () {
+                    field.value = button.textContent.trim();
+                    form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit"));
+                });
+            });
+        }
+
+        // Enter sends; Shift+Enter makes a new line.
+        field.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit"));
+            }
+        });
+
+        function paragraphs(container, text) {
+            String(text).split(/\n\s*\n/).forEach(function (chunk) {
+                if (!chunk.trim()) return;
+                var p = document.createElement("p");
+                p.textContent = chunk.trim();
+                container.appendChild(p);
+            });
+        }
+
+        function render(question, answer, isError) {
+            var asked = document.createElement("div");
+            asked.className = "turn turn-question";
+            asked.textContent = question;
+            log.appendChild(asked);
+
+            var reply = document.createElement("div");
+            reply.className = "turn " + (isError ? "turn-error" : "turn-answer");
+            paragraphs(reply, answer);
+            log.appendChild(reply);
+            log.scrollTop = log.scrollHeight;
+            return reply;
+        }
+
+        form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            var question = field.value.trim();
+            if (!question || busy) return;
+
+            busy = true;
+            if (starters) starters.hidden = true;
+            field.value = "";
+            submit.disabled = true;
+            field.setAttribute("aria-busy", "true");
+
+            var asked = document.createElement("div");
+            asked.className = "turn turn-question";
+            asked.textContent = question;
+            log.appendChild(asked);
+
+            var pending = document.createElement("div");
+            pending.className = "turn turn-pending";
+            pending.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+            pending.appendChild(document.createTextNode(" Thinking…"));
+            log.appendChild(pending);
+            log.scrollTop = log.scrollHeight;
+
+            fetch("/api/assistant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify({
+                    question: question,
+                    symbol: symbol,
+                    earlier: transcript.slice(-3)
+                })
+            })
+                .then(function (res) {
+                    return res.json().catch(function () {
+                        return { ok: false, message: "The app sent back something unexpected. Try again." };
+                    });
+                })
+                .then(function (data) {
+                    pending.remove();
+                    var reply = document.createElement("div");
+                    if (data.ok) {
+                        reply.className = "turn turn-answer";
+                        paragraphs(reply, data.answer);
+                        transcript.push({ question: question, answer: data.answer });
+                        save();
+                    } else {
+                        reply.className = "turn turn-error";
+                        paragraphs(reply, data.message || "No answer this time. Try again.");
+                    }
+                    log.appendChild(reply);
+                })
+                .catch(function () {
+                    pending.remove();
+                    var reply = document.createElement("div");
+                    reply.className = "turn turn-error";
+                    paragraphs(reply, "Could not reach the app. Check the server is still running, then try again.");
+                    log.appendChild(reply);
+                })
+                .then(function () {
+                    busy = false;
+                    submit.disabled = false;
+                    field.removeAttribute("aria-busy");
+                    log.scrollTop = log.scrollHeight;
+                    field.focus();
+                });
+        });
+    });
+
     function currency(n) {
         return "$" + n.toLocaleString(undefined, {
             minimumFractionDigits: 2, maximumFractionDigits: 2

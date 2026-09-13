@@ -8,6 +8,9 @@ call one of those, and render the result — the same way cli.py does.
 
 Run it with:  python -m flask --app web run
 """
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -20,6 +23,7 @@ from flask import (
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, ValidationError
 from portfolio_tracker.models import history, portfolio, stocks, users
+from portfolio_tracker.services import assistant
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
@@ -68,13 +72,16 @@ def inject_user():
     """Make the signed-in account available to every template."""
     account = getattr(g, "user", None)
     if account is None:
-        return {"current_user": None}
+        return {"current_user": None, "assistant_enabled": False}
     _, _, email, display_name, cash = account
-    return {"current_user": {
-        "email": email,
-        "display_name": display_name or email,
-        "cash": cash,
-    }}
+    return {
+        "current_user": {
+            "email": email,
+            "display_name": display_name or email,
+            "cash": cash,
+        },
+        "assistant_enabled": config.ASSISTANT_ENABLED,
+    }
 
 
 def safe_next(target):
@@ -459,6 +466,98 @@ def stock_fetch(symbol):
 
     flash(f"Fetched {added} new {noun} for {symbol}.", "success")
     return redirect(url_for("stock_detail", symbol=symbol, range=window))
+
+
+# ------------------------------------------------------------ assistant
+
+# Each question is a paid API call, so one account cannot fire them without
+# limit. Per-process and in memory: enough for a local single-server app,
+# and it resets on restart.
+ASSISTANT_LIMIT = 20
+ASSISTANT_WINDOW = 600  # seconds
+_asked = defaultdict(deque)
+_asked_lock = threading.Lock()
+
+
+def _within_assistant_limit(user_id):
+    now = time.monotonic()
+    with _asked_lock:
+        recent = _asked[user_id]
+        while recent and now - recent[0] > ASSISTANT_WINDOW:
+            recent.popleft()
+        if len(recent) >= ASSISTANT_LIMIT:
+            return False
+        recent.append(now)
+        return True
+
+
+def _answer_question(question, symbol, earlier=()):
+    """Shared by the drawer and the no-JavaScript page."""
+    if not _within_assistant_limit(g.user_id):
+        return assistant.Answer(
+            False, "", "busy",
+            f"That's {ASSISTANT_LIMIT} questions in {ASSISTANT_WINDOW // 60} minutes. "
+            "Take a short break and ask again shortly.",
+        )
+    # Built on the server from this app's records. Nothing numeric from the
+    # browser reaches the model; the page only says which ticker it shows.
+    context = operations.assistant_context(g.user_id, symbol)
+    return assistant.ask(context, question, earlier)
+
+
+@app.route("/api/assistant", methods=["POST"])
+@login_required
+def api_assistant():
+    """Ask from the drawer. JSON only.
+
+    Requiring a JSON body means a plain cross-site form cannot post here,
+    which matters for an endpoint where every call costs money.
+    """
+    if not request.is_json:
+        return {"ok": False, "message": "Send the question as JSON."}, 415
+
+    payload = request.get_json(silent=True) or {}
+    earlier = payload.get("earlier") or []
+    if not isinstance(earlier, list):
+        earlier = []
+    earlier = [
+        {"question": str(turn.get("question", "")), "answer": str(turn.get("answer", ""))}
+        for turn in earlier if isinstance(turn, dict)
+    ]
+
+    answer = _answer_question(
+        str(payload.get("question", "")),
+        str(payload.get("symbol", "") or ""),
+        earlier,
+    )
+    status = 200 if answer.ok else {"invalid": 400, "busy": 429,
+                                    "not_configured": 503, "disabled": 503}.get(answer.kind, 502)
+    return {
+        "ok": answer.ok,
+        "answer": answer.text,
+        "kind": answer.kind,
+        "message": answer.message,
+    }, status
+
+
+@app.route("/assistant", methods=["GET", "POST"])
+@login_required
+def assistant_page():
+    """The same assistant as a plain page, for use without JavaScript."""
+    symbol = (request.values.get("symbol") or "").strip().upper()
+    question = ""
+    answer = None
+    if request.method == "POST":
+        question = request.form.get("question", "")
+        answer = _answer_question(question, symbol)
+    return render_template(
+        "assistant.html",
+        motion="calm",
+        symbol=symbol,
+        question=question,
+        answer=answer,
+        max_chars=assistant.MAX_QUESTION_CHARS,
+    )
 
 
 # --------------------------------------------------------------- lookup

@@ -82,6 +82,58 @@
     {% block content %}{% endblock %}
 </main>
 
+{% if current_user and assistant_enabled %}
+    {# A real link first: without JavaScript it opens the full assistant page.
+       app.js turns it into a drawer toggle. #}
+    <a class="assistant-toggle" data-assistant-toggle
+       href="{{ url_for('assistant_page', symbol=assistant_symbol or None) }}"
+       aria-controls="assistant" aria-expanded="false">
+        <span class="assistant-toggle-mark" aria-hidden="true"></span>Ask{% if assistant_symbol %} about {{ assistant_symbol }}{% endif %}
+    </a>
+
+    <aside class="assistant" id="assistant" data-assistant hidden
+           data-symbol="{{ assistant_symbol or '' }}"
+           aria-labelledby="assistant-title">
+        <div class="assistant-head">
+            <div>
+                <p class="label">Assistant</p>
+                <h2 id="assistant-title">Ask{% if assistant_symbol %} about {{ assistant_symbol }}{% endif %}</h2>
+            </div>
+            <button type="button" class="assistant-close" data-assistant-close
+                    aria-label="Close the assistant">Close</button>
+        </div>
+
+        <p class="assistant-note">
+            Explains what things mean and what the numbers show. It won't tell
+            you what to buy or sell, and it can be wrong.
+        </p>
+
+        <div class="assistant-log" data-assistant-log role="log"
+             aria-live="polite" aria-relevant="additions"></div>
+
+        <div class="assistant-starters" data-assistant-starters>
+            {% if assistant_symbol %}
+                <button type="button" data-starter>What does this chart show?</button>
+                <button type="button" data-starter>How much has the price swung?</button>
+                <button type="button" data-starter>Explain these numbers in plain words</button>
+            {% else %}
+                <button type="button" data-starter>How spread out is my portfolio?</button>
+                <button type="button" data-starter>What does average cost mean?</button>
+                <button type="button" data-starter>Why does cash plus investments matter?</button>
+            {% endif %}
+        </div>
+
+        <form class="assistant-form" data-assistant-form method="post"
+              action="{{ url_for('assistant_page') }}">
+            <input type="hidden" name="symbol" value="{{ assistant_symbol or '' }}">
+            <label class="visually-hidden" for="assistant-question">Your question</label>
+            <textarea id="assistant-question" name="question" rows="2" maxlength="1000"
+                      placeholder="Ask a question…" required></textarea>
+            <button type="submit" class="btn btn-primary btn-sm">Ask</button>
+        </form>
+    </aside>
+{% endif %}
+
 <footer class="footer">
     <p>A practice portfolio · live prices from Yahoo Finance · nothing here is financial advice</p>
 </footer>

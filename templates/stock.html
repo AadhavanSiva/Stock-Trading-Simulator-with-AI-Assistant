@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set assistant_symbol = symbol %}
 {% from "_delta.html" import delta %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': symbol}] %}
 {% block title %}{{ symbol }} · {{ quote.company_name }} · Portfolio Tracker{% endblock %}

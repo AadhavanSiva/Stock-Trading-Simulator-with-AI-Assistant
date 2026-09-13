@@ -96,6 +96,50 @@ flat CSS.
 Landing page weight: 5.7 KB of HTML, 48 KB of local CSS and JS, plus a deferred
 603 KB Three.js (~150 KB gzipped) — 0.63 MB against a 1 MB budget.
 
+## Stock pages and charts
+
+Every ticker links to `/stock/<symbol>`: the live price, your position, and a
+price chart over 1D, 5D, 1M, 3M, 6M, 1Y or all time. Charts are inline SVG
+drawn on the server — no charting library, and they work with JavaScript off.
+Each chart carries a text description, and the figures beside it repeat what
+the line shows.
+
+Daily ranges read `price_history`. 1D and 5D need intraday bars, which that
+table cannot hold (it is one row per day by design), so they use
+`price_intraday` — apply `migrations/003_intraday_prices.sql` to an existing
+database. "1 day" means the most recent trading session, so it still shows
+Friday's prices over a weekend. Long ranges are thinned to 720 drawn points,
+keeping each span's high and low; every printed figure uses the full series.
+
+## Assistant
+
+A panel on every signed-in page answers questions about the stock you are
+looking at, or about your portfolio. It runs on Claude (`claude-opus-5`) via the
+official `anthropic` SDK, from `portfolio_tracker/services/assistant.py` — the
+only module that talks to the API.
+
+It is grounded, and scoped to teaching:
+
+- **Answers come from the app's own records.** Each question is sent with a
+  data block built server-side — price, your position, stored history ranges,
+  your holdings. The browser only says which ticker the page shows; no figure
+  it sends reaches the model.
+- **It explains and does not advise.** It will not tell you to buy, sell or
+  hold, predict prices, or call something a good investment. Asked "should I
+  buy this?", it helps you think through the question instead.
+- **It says when it doesn't know.** Earnings, ratios and news are not in the
+  app's data, so it says so rather than inventing them.
+
+Set `ANTHROPIC_API_KEY` in `.env` to switch it on. Without a key the panel
+explains the setup rather than failing. With JavaScript off, the "Ask" button
+opens a plain page that does the same thing.
+
+Operational details: the system prompt is frozen and cached, with all varying
+data in the user turn; refusal fallbacks are enabled (`fallbacks: "default"`);
+each account is limited to 20 questions per 10 minutes; and API errors become
+plain messages rather than stack traces. The test suite blocks any real API
+call, so running it never spends money.
+
 ## Motion
 
 Scroll-driven animation is done natively with CSS `animation-timeline: view()`

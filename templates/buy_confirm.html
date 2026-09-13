@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set assistant_symbol = quote.symbol %}
 {% set active = 'buy' %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Buy', 'url': url_for('buy_start')}, {'label': quote.symbol, 'url': url_for('buy_start', symbol=quote.symbol)}, {'label': 'Confirm'}] %}
 {% block title %}Confirm purchase · Portfolio Tracker{% endblock %}

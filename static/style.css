@@ -749,3 +749,105 @@ input.ticker-input {
     .stack-on-mobile td:first-child::before { content: none; }
     .stack-on-mobile .company { max-width: none; }
 }
+
+/* ========================================================== assistant == */
+/* A ruled side panel, not a chat bubble app. It opens on request and
+   otherwise stays out of the way. */
+
+.assistant-toggle {
+    position: fixed; right: var(--s5); bottom: var(--s5); z-index: 35;
+    display: inline-flex; align-items: center; gap: var(--s2);
+    background: var(--ink); color: var(--surface);
+    padding: var(--s2) var(--s4);
+    font-size: .9rem; font-weight: 650; text-decoration: none;
+    box-shadow: 0 1px 2px rgba(22,19,15,.2);
+    transition: background-color 160ms var(--ease), transform 160ms var(--ease);
+}
+.assistant-toggle:hover { background: var(--mark-deep); color: var(--surface); }
+.assistant-toggle[aria-expanded="true"] { background: var(--mark-deep); }
+.assistant-toggle-mark { width: 3px; height: .95em; background: var(--mark); flex: none; }
+.assistant-toggle:hover .assistant-toggle-mark,
+.assistant-toggle[aria-expanded="true"] .assistant-toggle-mark { background: var(--surface); }
+
+.assistant {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 36;
+    width: min(26rem, 100%);
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border-left: 1px solid var(--rule-2);
+    box-shadow: -12px 0 32px -24px rgba(22,19,15,.35);
+    transform: translateX(100%);
+    transition: transform 240ms var(--ease);
+}
+.assistant.is-open { transform: none; }
+
+.assistant-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: var(--s4); padding: var(--s4) var(--s5) var(--s3);
+    border-top: 3px solid var(--mark);
+    border-bottom: 2px solid var(--ink);
+}
+.assistant-head h2 { font-size: 1.2rem; margin: var(--s1) 0 0; }
+.assistant-close {
+    font: inherit; font-size: .85rem; color: var(--ink-2);
+    background: none; border: 1px solid var(--rule-2);
+    padding: var(--s1) var(--s3); cursor: pointer;
+}
+.assistant-close:hover { color: var(--ink); border-color: var(--ink-3); }
+
+.assistant-note {
+    margin: 0; padding: var(--s3) var(--s5);
+    font-size: .82rem; color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+}
+
+.assistant-log { flex: 1; overflow-y: auto; padding: var(--s4) var(--s5); }
+.turn { font-size: .93rem; margin-bottom: var(--s4); }
+.turn p { margin: 0 0 var(--s3); }
+.turn p:last-child { margin-bottom: 0; }
+.turn-question {
+    font-weight: 650; color: var(--ink);
+    padding-left: var(--s3); border-left: 2px solid var(--mark);
+}
+.turn-answer { color: var(--ink); padding-bottom: var(--s4); border-bottom: 1px solid var(--rule); }
+.turn-error { color: #6f2d19; background: var(--down-wash); border-left: 3px solid var(--down); padding: var(--s3); }
+.turn-pending { color: var(--ink-3); display: flex; align-items: center; gap: var(--s2); }
+
+.assistant-starters { display: flex; flex-direction: column; gap: var(--s2); padding: 0 var(--s5) var(--s4); }
+.assistant-starters button {
+    font: inherit; font-size: .88rem; text-align: left; cursor: pointer;
+    background: var(--paper); color: var(--ink-2);
+    border: 1px solid var(--rule-2); padding: var(--s2) var(--s3);
+    transition: border-color 160ms var(--ease), color 160ms var(--ease);
+}
+.assistant-starters button:hover { border-color: var(--ink-3); color: var(--ink); }
+
+.assistant-form {
+    display: flex; gap: var(--s2); align-items: flex-end;
+    padding: var(--s3) var(--s5) var(--s4);
+    border-top: 1px solid var(--rule-2);
+}
+.assistant-form textarea, .field textarea {
+    flex: 1; width: 100%; font: inherit; font-size: .95rem;
+    padding: var(--s2) var(--s3); resize: vertical; min-height: 2.8rem;
+    border: 1px solid var(--rule-2); background: var(--paper); color: var(--ink);
+    border-radius: 0;
+}
+.assistant-form textarea:focus, .field textarea:focus {
+    border-color: var(--mark); box-shadow: inset 0 -2px 0 var(--mark);
+}
+.assistant-form textarea:focus:not(:focus-visible),
+.field textarea:focus:not(:focus-visible) { outline: none; }
+.assistant-form .btn { width: auto; }
+
+.assistant-answer p { margin: 0 0 var(--s3); }
+.assistant-q { font-weight: 650; padding-left: var(--s3); border-left: 2px solid var(--mark); }
+
+@media (prefers-reduced-motion: reduce) {
+    .assistant, .assistant-toggle { transition: none !important; }
+}
+
+@media (max-width: 720px) {
+    .assistant { width: 100%; border-left: 0; }
+    .assistant-toggle { right: var(--s4); bottom: var(--s4); }
+}

@@ -39,3 +39,15 @@ PORTFOLIO_USER = os.getenv("PORTFOLIO_USER")
 
 # Cash every new account starts with, in dollars.
 STARTING_CASH = os.getenv("STARTING_CASH", "50000")
+
+# --- AI assistant -----------------------------------------------------------
+# Credentials are resolved by the Anthropic SDK itself: ANTHROPIC_API_KEY in
+# .env, or ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile. Nothing here
+# reads or stores a key. With no credentials the assistant explains how to
+# set one up instead of failing.
+ASSISTANT_ENABLED = os.getenv("ASSISTANT_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "claude-opus-5")
+# Answers here are short explanations for beginners, where lower effort keeps
+# replies quick; raise it if answers feel shallow.
+ASSISTANT_EFFORT = os.getenv("ASSISTANT_EFFORT", "medium")
+
