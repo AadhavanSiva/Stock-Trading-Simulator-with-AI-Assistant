@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="empty">
+        <div class="empty-mark" aria-hidden="true">🧭</div>
+        <h2>{{ message }}</h2>
+        <p>Let's get you back to somewhere useful.</p>
+        <div class="actions-row">
+            <a class="btn btn-primary" href="{{ url_for('index') }}">Back to my portfolio</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

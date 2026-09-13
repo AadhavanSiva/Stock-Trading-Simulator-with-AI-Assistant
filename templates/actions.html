@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active = 'actions' %}
+{% block title %}Update data · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Update your data</h1>
+    <p class="lede">
+        Prices are saved when you fetch them, not streamed continuously. Use
+        these when you want the latest numbers. Neither one buys or sells
+        anything.
+    </p>
+</div>
+
+<div class="card">
+    <div class="action-block">
+        <div class="action-copy">
+            <h3>Refresh today's prices</h3>
+            <p>
+                Looks up the current market price for each investment you own
+                and updates your portfolio. Takes a second or two per holding.
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('refresh_prices') }}">
+            <button type="submit" class="btn btn-primary"
+                    {% if not holdings %}disabled{% endif %}>Refresh prices</button>
+        </form>
+    </div>
+
+    <div class="action-block">
+        <div class="action-copy">
+            <h3>Load past prices</h3>
+            <p>
+                Downloads the last six months of daily prices for each holding,
+                which is what the
+                <a href="{{ url_for('history_view') }}">price history</a> page
+                uses. Safe to run more than once — days already stored are
+                skipped rather than duplicated.
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('load_history') }}">
+            <button type="submit" class="btn btn-secondary"
+                    {% if not holdings %}disabled{% endif %}>Load past prices</button>
+        </form>
+    </div>
+
+    {% if not holdings %}
+        <p class="faint" style="margin-top:1.75rem">
+            There's nothing to update until you own something.
+            <a href="{{ url_for('buy_start') }}">Buy your first stock</a> to get started.
+        </p>
+    {% endif %}
+</div>
+
+{% if report %}
+    <div class="card">
+        <div class="card-head">
+            <h2>{{ report_title }}</h2>
+            <p class="muted">What happened for each of your holdings.</p>
+        </div>
+        <ul class="outcome-list">
+            {% for outcome in report.outcomes %}
+                <li>
+                    <span class="outcome-symbol">{{ outcome.symbol }}</span>
+                    <span class="{{ 'outcome-ok' if outcome.ok else 'outcome-bad' }}">
+                        {% if not outcome.ok %}<strong>Failed —</strong> {% endif %}{{ outcome.message }}
+                    </span>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+{% endblock %}

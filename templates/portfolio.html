@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% set active = 'portfolio' %}
+{% block title %}My portfolio · Portfolio Tracker{% endblock %}
+
+{% block content %}
+{% if not summary.rows %}
+    <div class="card">
+        <div class="empty">
+            <div class="empty-mark" aria-hidden="true">🌱</div>
+            <h2>Your portfolio is empty</h2>
+            <p>
+                This is where your investments will appear once you own some.
+                For each one you'll see what you paid, what it's worth today,
+                and whether you're up or down.
+            </p>
+            <p>
+                You have <strong>{{ summary.cash | money }}</strong> in cash
+                ready to invest.
+            </p>
+            <p class="faint">
+                Nothing here uses real money — it's a practice portfolio for
+                learning how investing works.
+            </p>
+            <div class="actions-row">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first stock</a>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="page-head">
+        <h1>My portfolio</h1>
+        <p class="lede">
+            Everything you own, and how each investment has done since you bought it.
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="table-scroll">
+            <table>
+                <caption class="visually-hidden">Your holdings</caption>
+                <thead>
+                <tr>
+                    <th scope="col">Investment</th>
+                    <th scope="col" class="align-right">Shares</th>
+                    <th scope="col" class="align-right">Price you paid</th>
+                    <th scope="col" class="align-right">Price today</th>
+                    <th scope="col" class="align-right">Worth now</th>
+                    <th scope="col" class="align-right">Gain or loss</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in summary.rows %}
+                    {% set dir, arrow, word = movement(row.gain_loss) %}
+                    <tr>
+                        <td>
+                            <span class="ticker">{{ row.symbol }}</span>
+                            <span class="company">{{ row.company_name }}</span>
+                        </td>
+                        <td class="align-right numeric">{{ row.shares | shares }}</td>
+                        <td class="align-right numeric">{{ row.purchase_price | money }}</td>
+                        <td class="align-right numeric">{{ row.current_price | money }}</td>
+                        <td class="align-right numeric">{{ row.value | money }}</td>
+                        <td class="align-right">
+                            {% if row.gain_loss is none %}
+                                <span class="change change-unknown">
+                                    <span class="change-label">Not priced yet</span>
+                                </span>
+                            {% else %}
+                                <span class="change change-{{ dir }}">
+                                    <span class="arrow" aria-hidden="true">{{ arrow }}</span>
+                                    <span>{{ row.gain_loss | signed_money }}</span>
+                                    <span class="pct">{{ row.percent | percent }}</span>
+                                    <span class="change-label">{{ word }}</span>
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="totals">
+            <div>
+                <div class="total-label">Total spent</div>
+                <div class="total-value">{{ summary.total_cost | money }}</div>
+            </div>
+            <div>
+                <div class="total-label">Worth today</div>
+                <div class="total-value">{{ summary.holdings_value | money }}</div>
+            </div>
+            <div>
+                <div class="total-label">Cash available</div>
+                <div class="total-value">{{ summary.cash | money }}</div>
+            </div>
+            <div>
+                <div class="total-label">Total account value</div>
+                <div class="total-value">{{ summary.net_worth | money }}</div>
+            </div>
+            <div>
+                {% set dir, arrow, word = movement(summary.total_gain) %}
+                <div class="total-label">Overall gain or loss</div>
+                <div class="total-value change change-{{ dir }}">
+                    <span class="arrow" aria-hidden="true">{{ arrow }}</span>
+                    <span>{{ summary.total_gain | signed_money }}</span>
+                    <span class="pct">{{ summary.total_percent | percent }}</span>
+                    <span class="change-label">{{ word }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if summary.unpriced %}
+            <p class="faint" style="margin-top:1.5rem">
+                {{ summary.unpriced | join(', ') }}
+                {{ 'has' if summary.unpriced | length == 1 else 'have' }} no price yet,
+                so {{ 'it is' if summary.unpriced | length == 1 else 'they are' }}
+                left out of the totals.
+                <a href="{{ url_for('actions') }}">Update prices</a> to fill
+                {{ 'it' if summary.unpriced | length == 1 else 'them' }} in.
+            </p>
+        {% endif %}
+    </div>
+
+    <div class="actions-row">
+        <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy more</a>
+        <a class="btn btn-secondary" href="{{ url_for('sell_start') }}">Sell</a>
+        <a class="btn btn-quiet" href="{{ url_for('actions') }}">Refresh prices</a>
+    </div>
+
+    <div class="glossary">
+        <h3>What these words mean</h3>
+        <dl>
+            <dt>Shares</dt>
+            <dd>The number of units of a company you own. You can own part of one.</dd>
+
+            <dt>Price you paid</dt>
+            <dd>
+                Your average cost per share. If you bought the same company more
+                than once, this blends those purchases together.
+            </dd>
+
+            <dt>Gain or loss</dt>
+            <dd>
+                The difference between what you paid and what it is worth today.
+                It only becomes real money when you sell.
+            </dd>
+        </dl>
+    </div>
+{% endif %}
+{% endblock %}

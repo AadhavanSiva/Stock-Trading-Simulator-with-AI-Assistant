@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set active = 'buy' %}
+{% block title %}Buy {{ quote.symbol }} · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<a class="back-link" href="{{ url_for('buy_start') }}">← Look up a different company</a>
+
+<div class="page-head">
+    <h1>How much would you like to buy?</h1>
+    <p class="lede">Step 2 of 3 — nothing has been bought yet.</p>
+</div>
+
+<div class="card">
+    <div class="quote">
+        <div class="quote-name">{{ quote.company_name }}</div>
+        <div class="quote-symbol">{{ quote.symbol }}</div>
+        <div class="quote-price numeric">{{ quote.price | money }}</div>
+        <p class="quote-note">Current market price, per share.</p>
+    </div>
+
+    <dl class="review">
+        <div class="review-row">
+            <dt>Cash available</dt>
+            <dd class="numeric">{{ quote.cash | money }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>That buys you up to</dt>
+            <dd class="numeric">{{ quote.affordable | shares }} shares</dd>
+        </div>
+    </dl>
+
+    {% if quote.owned is not none %}
+        <p class="muted">
+            You already own {{ quote.owned | shares }}
+            {{ 'share' if quote.owned == 1 else 'shares' }} of {{ quote.symbol }},
+            bought at {{ quote.average_cost | money }} each on average. Buying more
+            will blend the two prices into a new average.
+        </p>
+    {% endif %}
+
+    {% if error %}
+        <div class="inline-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('buy_review') }}">
+        <input type="hidden" name="symbol" value="{{ quote.symbol }}">
+
+        <div class="field">
+            <label for="shares">Number of shares</label>
+            <p class="hint">
+                You can buy part of a share — 0.5 is fine if a whole one is
+                more than you want to spend. Up to
+                {{ quote.affordable | shares }} with the cash you have.
+            </p>
+            <input type="number" id="shares" name="shares" value="{{ shares or '' }}"
+                   step="any" min="0.0001" max="{{ quote.affordable }}" inputmode="decimal"
+                   placeholder="1" required autofocus>
+        </div>
+
+        <div class="actions-row">
+            <button type="submit" class="btn btn-primary">Review this purchase</button>
+            <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

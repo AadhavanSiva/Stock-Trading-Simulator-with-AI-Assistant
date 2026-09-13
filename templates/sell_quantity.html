@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set active = 'sell' %}
+{% block title %}Sell {{ symbol }} · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<a class="back-link" href="{{ url_for('sell_start') }}">← Choose something else</a>
+
+<div class="page-head">
+    <h1>How much {{ symbol }} would you like to sell?</h1>
+    <p class="lede">Step 1 of 2 — nothing has been sold yet.</p>
+</div>
+
+<div class="card">
+    <div class="quote">
+        <div class="quote-name">{{ company_name }}</div>
+        <div class="quote-symbol">{{ symbol }}</div>
+        <div class="quote-price numeric">{{ price | money }}</div>
+        <p class="quote-note">Current market price, per share.</p>
+    </div>
+
+    <dl class="review">
+        <div class="review-row">
+            <dt>Shares you own</dt>
+            <dd class="numeric">{{ maximum | shares }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Average price you paid</dt>
+            <dd class="numeric">{{ average_cost | money }}</dd>
+        </div>
+    </dl>
+
+    {% if error %}
+        <div class="inline-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('sell_review', symbol=symbol) }}">
+        <div class="field">
+            <label for="shares">Number of shares to sell</label>
+            <p class="hint">
+                Up to {{ maximum | shares }}. Selling all of them closes this
+                investment and removes it from your portfolio.
+            </p>
+            <input type="number" id="shares" name="shares" value="{{ shares or '' }}"
+                   step="any" min="0.0001" max="{{ maximum }}" inputmode="decimal"
+                   placeholder="{{ maximum | shares }}" required autofocus>
+        </div>
+
+        <div class="actions-row">
+            <button type="submit" class="btn btn-primary">Review this sale</button>
+            <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

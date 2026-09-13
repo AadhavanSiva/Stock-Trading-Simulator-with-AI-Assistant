@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Portfolio Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:,">
+</head>
+<body>
+<header class="masthead">
+    <div class="masthead-inner">
+        <a class="wordmark" href="{{ url_for('index') }}">Portfolio <span>Tracker</span></a>
+
+        {% if current_user %}
+            <nav class="nav">
+                <a href="{{ url_for('index') }}"        {% if active == 'portfolio' %}class="is-active"{% endif %}>My portfolio</a>
+                <a href="{{ url_for('balance') }}"      {% if active == 'balance' %}class="is-active"{% endif %}>Balance</a>
+                <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active"{% endif %}>Buy</a>
+                <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active"{% endif %}>Sell</a>
+                <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active"{% endif %}>Price history</a>
+                <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active"{% endif %}>Update data</a>
+            </nav>
+
+            <div class="account">
+                <a class="cash-chip" href="{{ url_for('balance') }}"
+                   title="Cash available to invest">
+                    <span class="cash-label">Cash</span>
+                    <span class="cash-figure">{{ current_user.cash | money }}</span>
+                </a>
+                <span class="account-name">{{ current_user.display_name }}</span>
+                <a class="signout" href="{{ url_for('logout') }}">Sign out</a>
+            </div>
+        {% endif %}
+    </div>
+</header>
+
+<main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flashes">
+                {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+</main>
+
+<p class="footer">Practice portfolio · prices from Yahoo Finance · nothing here is financial advice</p>
+</body>
+</html>

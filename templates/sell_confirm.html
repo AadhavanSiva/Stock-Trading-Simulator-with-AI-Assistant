@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set active = 'sell' %}
+{% block title %}Confirm sale · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Ready to sell?</h1>
+    <p class="lede">Step 2 of 2 — check this over. Nothing happens until you confirm.</p>
+</div>
+
+<div class="card">
+    <h2>{{ company_name }}</h2>
+    <p class="muted">{{ symbol }}</p>
+
+    {% set dir, arrow, word = movement(gain) %}
+
+    <dl class="review">
+        <div class="review-row">
+            <dt>Shares to sell</dt>
+            <dd class="numeric">{{ shares | shares }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Price per share</dt>
+            <dd class="numeric">{{ price | money }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Gain or loss you'd lock in</dt>
+            <dd>
+                <span class="change change-{{ dir }}">
+                    <span class="arrow" aria-hidden="true">{{ arrow }}</span>
+                    <span>{{ gain | signed_money }}</span>
+                    <span class="change-label">{{ word }}</span>
+                </span>
+            </dd>
+        </div>
+        <div class="review-row review-total">
+            <dt>You'd receive</dt>
+            <dd class="numeric">{{ proceeds | money }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Cash afterwards</dt>
+            <dd class="numeric">{{ cash_after | money }}</dd>
+        </div>
+    </dl>
+
+    {% if closes %}
+        <p class="muted">
+            This sells everything you own of {{ symbol }}, so it will be
+            removed from your portfolio.
+        </p>
+    {% endif %}
+
+    <p class="faint">
+        A gain only becomes real when you sell — that's what this does.
+        If the market price moves in the next few seconds, you'll get the
+        price at the moment you confirm.
+    </p>
+
+    <form method="post" action="{{ url_for('sell_confirm', symbol=symbol) }}">
+        <input type="hidden" name="shares" value="{{ shares }}">
+        <div class="actions-row">
+            <button type="submit" class="btn btn-primary">Yes, sell</button>
+            <a class="btn btn-secondary"
+               href="{{ url_for('sell_quantity', symbol=symbol) }}">Change amount</a>
+            <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active = 'buy' %}
+{% block title %}Confirm purchase · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Ready to buy?</h1>
+    <p class="lede">Step 3 of 3 — check this over. Nothing happens until you confirm.</p>
+</div>
+
+<div class="card">
+    <h2>{{ quote.company_name }}</h2>
+    <p class="muted">{{ quote.symbol }}</p>
+
+    <dl class="review">
+        <div class="review-row">
+            <dt>Shares</dt>
+            <dd class="numeric">{{ shares | shares }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Price per share</dt>
+            <dd class="numeric">{{ quote.price | money }}</dd>
+        </div>
+        <div class="review-row review-total">
+            <dt>Total cost</dt>
+            <dd class="numeric">{{ cost | money }}</dd>
+        </div>
+        <div class="review-row">
+            <dt>Cash left afterwards</dt>
+            <dd class="numeric">{{ cash_after | money }}</dd>
+        </div>
+    </dl>
+
+    <p class="faint">
+        The market price moves constantly. If it changes in the next few
+        seconds, you'll pay the price at the moment you confirm, and we'll
+        tell you what that was.
+    </p>
+
+    <form method="post" action="{{ url_for('buy_confirm') }}">
+        <input type="hidden" name="symbol" value="{{ quote.symbol }}">
+        <input type="hidden" name="shares" value="{{ shares }}">
+        <div class="actions-row">
+            <button type="submit" class="btn btn-primary">Yes, buy it</button>
+            <a class="btn btn-secondary"
+               href="{{ url_for('buy_start', symbol=quote.symbol) }}">Change amount</a>
+            <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% set active = 'history' %}
+{% block title %}Price history · Portfolio Tracker{% endblock %}
+
+{% block content %}
+{% if not rows %}
+    <div class="card">
+        <div class="empty">
+            <div class="empty-mark" aria-hidden="true">📈</div>
+            <h2>No price history yet</h2>
+            <p>
+                Once you own something, this page shows how its price has
+                moved over time — so you can see whether today's price is
+                unusually high, unusually low, or about normal.
+            </p>
+            <div class="actions-row">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first stock</a>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="page-head">
+        <h1>Price history</h1>
+        <p class="lede">
+            How the price of each of your investments has moved, so today's
+            number has something to be compared against.
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="table-scroll">
+            <table>
+                <thead>
+                <tr>
+                    <th scope="col">Investment</th>
+                    <th scope="col" class="align-right">Price today</th>
+                    <th scope="col" class="align-right">{{ days }}-day average</th>
+                    <th scope="col" class="align-right">Highest</th>
+                    <th scope="col" class="align-right">Lowest</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>
+                            <span class="ticker">{{ row.symbol }}</span>
+                            <span class="company">{{ row.company_name }}</span>
+                        </td>
+                        <td class="align-right numeric">{{ row.current_price | money }}</td>
+                        <td class="align-right numeric">{{ row.average | money }}</td>
+                        <td class="align-right numeric">{{ row.high | money }}</td>
+                        <td class="align-right numeric">{{ row.low | money }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <p class="faint" style="margin-top:1.5rem">
+            A dash means we haven't downloaded that company's history yet.
+            <a href="{{ url_for('actions') }}">Load past prices</a> to fill it in.
+        </p>
+    </div>
+
+    <div class="glossary">
+        <h3>What these words mean</h3>
+        <dl>
+            <dt>{{ days }}-day average</dt>
+            <dd>
+                The typical closing price over the last {{ days }} days. Comparing
+                today's price to this tells you whether the price is currently
+                running high or low against its recent norm.
+            </dd>
+
+            <dt>Highest and lowest</dt>
+            <dd>
+                The best and worst closing prices in the history we've stored.
+                They show how much this investment tends to swing — a wide gap
+                means a bumpier ride.
+            </dd>
+
+            <dt>Closing price</dt>
+            <dd>The price a stock finished at when the market closed for the day.</dd>
+        </dl>
+    </div>
+{% endif %}
+{% endblock %}

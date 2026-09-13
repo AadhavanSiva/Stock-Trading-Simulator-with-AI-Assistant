@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set active = 'buy' %}
+{% block title %}Buy · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Buy a stock</h1>
+    <p class="lede">
+        Start by telling us which company you're interested in. We'll look up
+        its current price before you decide anything.
+    </p>
+</div>
+
+<div class="card">
+    {% if error %}
+        <div class="inline-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('buy_lookup') }}">
+        <div class="field">
+            <label for="symbol">Ticker symbol</label>
+            <p class="hint">
+                A ticker is the short code a company trades under — Apple is
+                AAPL, Microsoft is MSFT.
+            </p>
+            <input type="text" id="symbol" name="symbol" class="ticker-input"
+                   value="{{ symbol or '' }}" placeholder="AAPL"
+                   autocomplete="off" autocapitalize="characters"
+                   spellcheck="false" required autofocus>
+        </div>
+
+        <div class="actions-row">
+            <button type="submit" class="btn btn-primary">Look up price</button>
+            <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<div class="glossary">
+    <h3>Good to know</h3>
+    <dl>
+        <dt>You won't buy anything yet</dt>
+        <dd>
+            Looking up a price doesn't cost anything or change your portfolio.
+            You'll see the company name and price first, then choose how much
+            to buy, and confirm before anything happens.
+        </dd>
+
+        <dt>You always pay the market price</dt>
+        <dd>
+            The price comes from the live market, so you can't type your own.
+            That's how buying actually works.
+        </dd>
+    </dl>
+</div>
+{% endblock %}
