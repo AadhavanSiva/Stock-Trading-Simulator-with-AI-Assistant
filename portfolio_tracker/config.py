@@ -49,3 +49,6 @@ ASSISTANT_ENABLED = os.getenv("ASSISTANT_ENABLED", "1").strip().lower() not in (
 ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "gemini-3.8-flash")
 # How much the model reasons before answering: low, medium or high.
 ASSISTANT_THINKING = os.getenv("ASSISTANT_THINKING", "medium").strip().lower()
+# Let the assistant search Google for news, earnings and background that the
+# app does not store. On Gemini 3 models each search it runs is billed.
+ASSISTANT_SEARCH = os.getenv("ASSISTANT_SEARCH", "1").strip().lower() not in ("0", "false", "no")

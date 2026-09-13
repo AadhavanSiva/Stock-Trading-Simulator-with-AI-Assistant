@@ -119,37 +119,59 @@ looking at, or about your portfolio. It runs on Google's Gemini
 `portfolio_tracker/services/assistant.py` — the only module that talks to the
 API.
 
-It is grounded, and scoped to teaching:
-
-- **Answers come from the app's own records.** Each question is sent with a
-  data block built server-side — price, your position, stored history ranges,
-  your holdings. The browser only says which ticker the page shows; no figure
-  it sends reaches the model.
+- **Your own figures come from the app.** Each question is sent with a data
+  block built server-side — price, your position, stored history, your
+  holdings. The browser only says which ticker the page shows; no figure it
+  sends reaches the model.
+- **It researches the rest with Google Search.** News, earnings, what a company
+  does — looked up rather than recalled, with the sources listed as links
+  under the answer. Where the web and the app disagree about your own
+  figures, the app wins.
 - **It explains and does not advise.** It will not tell you to buy, sell or
-  hold, predict prices, or call something a good investment. Asked "should I
-  buy this?", it helps you think through the question instead.
-- **It says when it doesn't know.** Earnings, ratios and news are not in the
-  app's data, so it says so rather than inventing them.
+  hold, predict prices, or call something a good investment. Analyst views,
+  if it mentions them, are framed as opinions that often disagree.
 
-Set `GEMINI_API_KEY` in `.env` to switch it on — create one at
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey). The SDK also
-accepts `GOOGLE_API_KEY`, but use `GEMINI_API_KEY` so it is not confused with
-the `GOOGLE_CLIENT_*` sign-in settings. Without a key the panel explains the
-setup rather than failing. With JavaScript off, the "Ask" button opens a plain
-page that does the same thing.
+### Setting it up
 
-**Privacy on a free key.** Under Google's Gemini API terms, content sent on the
-free tier may be used to improve Google's products and read by human
-reviewers, and Google advises against sending personal information. A paid,
-billing-enabled key does not use prompts that way. The assistant never sends
-your name or email, and the panel reminds people to leave personal details
-out of questions.
+Add `GEMINI_API_KEY` to `.env` — create one at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) — and restart.
+The SDK also accepts `GOOGLE_API_KEY`; `GEMINI_API_KEY` is suggested only so it
+is not confused with the `GOOGLE_CLIENT_*` sign-in settings.
 
-Operational details: refused or safety-blocked answers are withheld rather than
-shown partially; an invalid key (which Gemini reports as HTTP 400, not 401) is
-recognised and explained; each account is limited to 20 questions per 10
-minutes; and API or network errors become plain messages rather than stack
-traces. The test suite blocks any real API call.
+**Web research needs a paid key.** Grounding with Google Search is not on the
+Gemini free tier. On a free key the assistant still answers, using only the
+app's data, and every such answer carries a note saying research was not
+available. With billing enabled on the key's Google Cloud project, research
+turns on by itself within 15 minutes — no restart. Paid pricing at the time of
+writing: 5,000 searches a month free across Gemini 3 models, then $14 per
+1,000. Set `ASSISTANT_SEARCH=0` to switch research off.
+
+**Privacy.** On a free key Google may use what you send to improve its
+products and human reviewers may read it; a paid key does not use prompts
+that way. The assistant never sends your name or email, and the panel reminds
+people to leave personal details out of questions.
+
+### Google's display terms for searched answers
+
+Answers that used Google Search come with Google's search-suggestion chips,
+which its terms require to be shown with the answer and left unmodified. They
+are rendered exactly as returned, inside a sandboxed iframe (no scripts, and
+their CSS cannot reach the page). Source links point at the exact address
+Google returned, with no redirect or click tracking added.
+
+### How failures are handled
+
+- A search refused for quota (HTTP 429) is answered again without search, and
+  search is paused for 15 minutes rather than refused on every question.
+- Temporary server errors (Gemini's "high demand" 503s) are retried twice with
+  short backoff before the reader sees anything.
+- An invalid key — which Gemini reports as HTTP 400, not 401 — is recognised
+  and explained; so are a missing key, an unknown model and network failures.
+- Refused or safety-blocked answers are withheld rather than shown partially.
+- Each account is limited to 20 questions per 10 minutes.
+
+With JavaScript off, the "Ask" button opens a plain page that does the same
+thing. The test suite blocks any real API call.
 
 ## Motion
 

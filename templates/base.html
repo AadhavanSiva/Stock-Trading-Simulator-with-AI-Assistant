@@ -104,10 +104,11 @@
         </div>
 
         <p class="assistant-note">
-            Explains what things mean and what the numbers show. It won't tell
-            you what to buy or sell, and it can be wrong. Questions go to
-            Google's Gemini; on a free API key Google may use them and people
-            may read them, so leave out anything personal.
+            Researches companies on the web and explains what the numbers show.
+            It won't tell you what to buy or sell, and it can be wrong — check
+            its sources. Questions go to Google's Gemini; on a free API key
+            Google may use them and people may read them, so leave out anything
+            personal.
         </p>
 
         <div class="assistant-log" data-assistant-log role="log"
@@ -115,9 +116,9 @@
 
         <div class="assistant-starters" data-assistant-starters>
             {% if assistant_symbol %}
-                <button type="button" data-starter>What does this chart show?</button>
+                <button type="button" data-starter>What does this company actually do?</button>
+                <button type="button" data-starter>What's happened with this company recently?</button>
                 <button type="button" data-starter>How much has the price swung?</button>
-                <button type="button" data-starter>Explain these numbers in plain words</button>
             {% else %}
                 <button type="button" data-starter>How spread out is my portfolio?</button>
                 <button type="button" data-starter>What does average cost mean?</button>

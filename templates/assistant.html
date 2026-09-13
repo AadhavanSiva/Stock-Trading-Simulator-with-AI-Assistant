@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}] + ([{'label': symbol, 'url': url_for('stock_detail', symbol=symbol)}] if symbol else []) + [{'label': 'Ask'}] %}
 {% set assistant_symbol = symbol %}
+{% from "_grounding.html" import grounding %}
 {% block title %}Ask{% if symbol %} about {{ symbol }}{% endif %} · Portfolio Tracker{% endblock %}
 
 {% block content %}
@@ -8,8 +9,9 @@
     <p class="label">Assistant</p>
     <h1>Ask{% if symbol %} about {{ symbol }}{% endif %}</h1>
     <p class="lede">
-        Ask what something means or what the numbers show. It explains; it
-        won't tell you what to buy or sell.
+        Ask what something means, what the numbers show, or what's been
+        happening with a company. It researches and explains; it won't tell
+        you what to buy or sell.
     </p>
 </div>
 
@@ -22,6 +24,7 @@
             {% for paragraph in answer.text.split('\n\n') %}
                 <p>{{ paragraph }}</p>
             {% endfor %}
+            {{ grounding(answer) }}
         </div>
     {% elif answer %}
         <div class="inline-error" role="alert">
@@ -36,8 +39,9 @@
             <label for="assistant-page-question">Your question</label>
             <p class="hint" id="assistant-page-hint">
                 {% if symbol %}
-                    It can see {{ symbol }}'s price, any stored history, and your
-                    position. For example: "What does average cost mean for me here?"
+                    It can see {{ symbol }}'s price, stored history and your
+                    position, and can search the web for news and earnings. For
+                    example: "What has happened with this company recently?"
                 {% else %}
                     It can see your cash and holdings. For example: "How spread out
                     is my portfolio?"

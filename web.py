@@ -240,6 +240,31 @@ def shares(value):
     return operations.format_shares(value)
 
 
+SUGGESTIONS_SANDBOX = "allow-popups allow-popups-to-escape-sandbox"
+
+
+@app.template_filter("suggestions_doc")
+def suggestions_doc(rendered_content):
+    """Wrap Google's search-suggestion HTML as a document for a sandboxed iframe.
+
+    The snippet itself goes in untouched, as Google's terms require. It
+    carries its own CSS, so it lives in an iframe where that CSS cannot
+    reach this page, and the sandbox stops any script. The <base> makes its
+    links open a new tab instead of navigating the tiny frame (google.com
+    refuses to be framed anyway). Jinja escapes this for the srcdoc
+    attribute; the browser unescapes it back into the document.
+    """
+    return (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<base target="_blank"></head><body style="margin:0">'
+        + (rendered_content or "")
+        + "</body></html>"
+    )
+
+
+app.jinja_env.globals["SUGGESTIONS_SANDBOX"] = SUGGESTIONS_SANDBOX
+
+
 @app.template_filter("long_date")
 def long_date(value):
     """Mar 12, 2026 — built by hand because "%-d" fails on Windows."""
@@ -559,6 +584,14 @@ def api_assistant():
         "answer": answer.text,
         "kind": answer.kind,
         "message": answer.message,
+        "sources": [
+            {"title": src.title, "uri": src.uri, "domain": src.domain}
+            for src in answer.sources
+        ],
+        # Google's HTML, passed through untouched: its terms require the
+        # suggestions to be shown, unmodified, with any searched answer.
+        "search_suggestions": answer.suggestions_html,
+        "notice": answer.notice,
     }, status
 
 

@@ -71,6 +71,8 @@ def no_real_api_calls(monkeypatch):
     from portfolio_tracker.services import assistant
 
     monkeypatch.setattr(assistant, "_client", _NoRealAPICalls())
+    # A search refusal in one test must not leave search paused for the next.
+    monkeypatch.setattr(assistant, "_search_blocked_until", 0.0)
 
 
 @pytest.fixture(scope="session")

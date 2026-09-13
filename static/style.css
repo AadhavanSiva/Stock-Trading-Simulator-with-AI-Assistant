@@ -893,6 +893,27 @@ input.ticker-input {
 .assistant-form .btn { width: auto; }
 
 .assistant-answer p { margin: 0 0 var(--s3); }
+
+.answer-notice {
+    margin: var(--s3) 0 0; padding: var(--s2) var(--s3);
+    font-size: .82rem; color: #5a4720;
+    background: var(--note-wash); border-left: 3px solid var(--note);
+}
+
+/* Google's search suggestions: its HTML, in a sandboxed frame, unmodified. */
+.search-suggestions {
+    display: block; width: 100%; height: 4.25rem;
+    border: 0; margin: var(--s3) 0 0;
+    background: transparent;
+}
+
+.sources { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--rule); }
+.sources .label { margin-bottom: var(--s2); }
+.sources ol { margin: 0; padding-left: 1.2rem; font-size: .84rem; }
+.sources li { margin-bottom: var(--s1); line-height: 1.4; }
+.sources a { color: var(--ink); text-decoration-color: var(--rule-2); overflow-wrap: anywhere; }
+.sources a:hover { color: var(--mark-deep); text-decoration-color: currentColor; }
+.source-domain { color: var(--ink-3); font-size: .78rem; }
 .assistant-q { font-weight: 650; padding-left: var(--s3); border-left: 2px solid var(--mark); }
 
 @media (prefers-reduced-motion: reduce) {

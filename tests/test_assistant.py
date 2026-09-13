@@ -129,8 +129,9 @@ class TestSystemPromptPolicy:
     def test_forbids_price_predictions(self):
         assert "do not predict where a price is heading" in assistant.SYSTEM_PROMPT
 
-    def test_requires_figures_to_come_from_app_data(self):
-        assert "Never produce a figure that is not in the data" in assistant.SYSTEM_PROMPT
+    def test_requires_every_figure_to_have_a_source(self):
+        assert ("Never produce a figure that is neither in the app data nor in "
+                "something you found") in assistant.SYSTEM_PROMPT
 
     def test_asks_for_plain_text_not_markdown(self):
         assert "do not use markdown" in assistant.SYSTEM_PROMPT

@@ -1,0 +1,32 @@
+{# Sources and Google Search suggestions for an answer that used search.
+
+   Google's terms for grounded answers: the search suggestions must be shown
+   with the answer and left unmodified, and links must go straight to their
+   destination with nothing of ours in between. So the suggestions are
+   rendered as-is in a sandboxed frame, and each source is a plain link to
+   the exact address Google returned. #}
+{% macro grounding(answer) %}
+    {% if answer.notice %}
+        <p class="answer-notice" role="note">{{ answer.notice }}</p>
+    {% endif %}
+    {% if answer.suggestions_html %}
+        <iframe class="search-suggestions" title="Related Google searches"
+                sandbox="{{ SUGGESTIONS_SANDBOX }}"
+                srcdoc="{{ answer.suggestions_html | suggestions_doc }}"></iframe>
+    {% endif %}
+    {% if answer.sources %}
+        <div class="sources">
+            <p class="label">Sources</p>
+            <ol>
+                {% for src in answer.sources %}
+                    <li>
+                        <a href="{{ src.uri }}" target="_blank" rel="noopener">{{ src.title }}</a>
+                        {% if src.domain and src.domain != src.title %}
+                            <span class="source-domain">{{ src.domain }}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ol>
+        </div>
+    {% endif %}
+{% endmacro %}

@@ -247,7 +247,13 @@
         var transcript = load();
         var busy = false;
 
-        transcript.forEach(function (turn) { render(turn.question, turn.answer, false); });
+        // A restored answer keeps its sources and Google's suggestions: the
+        // terms require the suggestions to accompany a searched answer
+        // whenever it is shown, not just the first time.
+        transcript.forEach(function (turn) {
+            var reply = render(turn.question, turn.answer, false);
+            grounding(reply, turn.sources, turn.suggestions, turn.notice);
+        });
         if (transcript.length && starters) starters.hidden = true;
 
         function load() {
@@ -312,6 +318,62 @@
             });
         }
 
+        /* Sources and Google Search suggestions for a searched answer.
+         * Suggestions are Google's own HTML, shown unmodified as its terms
+         * require, inside a sandboxed iframe: no scripts, and its CSS can't
+         * touch this page. Source links go straight to the address Google
+         * gave, and only http(s) addresses are ever made into links. */
+        function grounding(container, sources, suggestions, notice) {
+            if (notice) {
+                var note = document.createElement("p");
+                note.className = "answer-notice";
+                note.setAttribute("role", "note");
+                note.textContent = notice;
+                container.appendChild(note);
+            }
+            if (suggestions) {
+                var frame = document.createElement("iframe");
+                frame.className = "search-suggestions";
+                frame.title = "Related Google searches";
+                frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
+                frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8">'
+                    + '<base target="_blank"></head><body style="margin:0">'
+                    + suggestions + "</body></html>";
+                container.appendChild(frame);
+            }
+            if (!sources || !sources.length) return;
+
+            var box = document.createElement("div");
+            box.className = "sources";
+            var heading = document.createElement("p");
+            heading.className = "label";
+            heading.textContent = "Sources";
+            box.appendChild(heading);
+
+            var list = document.createElement("ol");
+            sources.forEach(function (src) {
+                if (!src || !/^https?:\/\//i.test(String(src.uri || ""))) return;
+                var item = document.createElement("li");
+                var link = document.createElement("a");
+                link.href = src.uri;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.textContent = src.title || src.uri;
+                item.appendChild(link);
+                if (src.domain && src.domain !== src.title) {
+                    var domain = document.createElement("span");
+                    domain.className = "source-domain";
+                    domain.textContent = " " + src.domain;
+                    item.appendChild(domain);
+                }
+                list.appendChild(item);
+            });
+            if (list.children.length) {
+                box.appendChild(list);
+                container.appendChild(box);
+            }
+        }
+
         function render(question, answer, isError) {
             var asked = document.createElement("div");
             asked.className = "turn turn-question";
@@ -345,7 +407,7 @@
             var pending = document.createElement("div");
             pending.className = "turn turn-pending";
             pending.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
-            pending.appendChild(document.createTextNode(" Thinking…"));
+            pending.appendChild(document.createTextNode(" Researching…"));
             log.appendChild(pending);
             log.scrollTop = log.scrollHeight;
 
@@ -355,7 +417,10 @@
                 body: JSON.stringify({
                     question: question,
                     symbol: symbol,
-                    earlier: transcript.slice(-3)
+                    // Only the words go back; sources and Google's HTML stay here.
+                    earlier: transcript.slice(-3).map(function (turn) {
+                        return { question: turn.question, answer: turn.answer };
+                    })
                 })
             })
                 .then(function (res) {
@@ -369,7 +434,14 @@
                     if (data.ok) {
                         reply.className = "turn turn-answer";
                         paragraphs(reply, data.answer);
-                        transcript.push({ question: question, answer: data.answer });
+                        grounding(reply, data.sources, data.search_suggestions, data.notice);
+                        transcript.push({
+                            question: question,
+                            answer: data.answer,
+                            sources: data.sources || [],
+                            suggestions: data.search_suggestions || "",
+                            notice: data.notice || ""
+                        });
                         save();
                     } else {
                         reply.className = "turn turn-error";
