@@ -19,6 +19,10 @@
     </p>
 </div>
 
+{# What the chart actually covers. When only part of the range is stored,
+   say so everywhere a label would otherwise claim the whole range. #}
+{% set coverage = ('since ' ~ (stored_since | long_date)) if partial else (range_label | lower) %}
+
 <div class="panel">
     {# Range switcher: plain links, so it works with JavaScript off. #}
     <nav class="ranges" aria-label="Chart range">
@@ -30,59 +34,109 @@
     </nav>
 
     {% if chart %}
+        {% if partial %}
+            {# Before the chart, so nobody reads the line first and the
+               caveat second. #}
+            <div class="chart-notice" role="note">
+                <p>
+                    {% if window == 'all' %}
+                        <strong>This isn't the full history yet.</strong>
+                        Only prices since {{ stored_since | long_date }} are stored,
+                        so the chart below shows that period, not the company's
+                        whole life on the market.
+                    {% else %}
+                        <strong>Part of this range is missing.</strong>
+                        Prices are stored only from {{ stored_since | long_date }},
+                        so this is not a full {{ range_label | lower }}.
+                    {% endif %}
+                </p>
+                <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
+                      data-busy-label="Loading full history…">
+                    <input type="hidden" name="range" value="{{ window }}">
+                    <button type="submit" class="btn btn-secondary btn-sm">Load full history</button>
+                </form>
+            </div>
+        {% endif %}
+
         {% set dir, arrow, word = movement(chart.change) %}
         <div class="chart-head">
             <div>
-                <p class="label">{{ range_label }}</p>
+                <p class="label">{{ range_label }}{% if partial %} · partial{% endif %}</p>
                 <p class="chart-figure num">{{ chart.last | money }}</p>
             </div>
             <div class="chart-change">
                 {{ delta(chart.change, chart.change_pct) }}
-                <p class="faint" style="margin:var(--s1) 0 0">
-                    over {{ range_label | lower }}
-                </p>
+                <p class="faint" style="margin:var(--s1) 0 0">{{ coverage }}</p>
             </div>
         </div>
 
-        {# Drawn server-side. The figures below repeat everything the line
-           says, so the chart is an illustration rather than the only way
-           to read the data. #}
+        {# Drawn server-side. The SVG stretches to its container, which would
+           distort any text inside it, so axis labels are HTML positioned by
+           percentage beside the plot. They are hidden from screen readers:
+           the SVG description below already states the same facts. #}
         <figure class="chart chart-{{ dir }}">
-            <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}"
-                 preserveAspectRatio="none" role="img"
-                 aria-labelledby="chart-title chart-desc">
-                <title id="chart-title">{{ symbol }} closing price, {{ range_label | lower }}</title>
-                <desc id="chart-desc">
-                    From {{ chart.first | money }} to {{ chart.last | money }}:
-                    a change of {{ chart.change | signed_money }}, {{ word }} over the period.
-                    Low {{ chart.low | money }}, high {{ chart.high | money }},
-                    across {{ '{:,}'.format(chart.count) }} prices.
-                </desc>
+            <div class="chart-frame">
+                <p class="axis-title axis-title-y" aria-hidden="true">Price (USD)</p>
 
-                <line class="chart-baseline" x1="0" y1="{{ chart.baseline_y }}"
-                      x2="{{ chart.width }}" y2="{{ chart.baseline_y }}"
-                      vector-effect="non-scaling-stroke"></line>
-                <path class="chart-area" d="{{ chart.area_path }}"></path>
-                <path class="chart-line" d="{{ chart.path }}"
-                      vector-effect="non-scaling-stroke"></path>
-            </svg>
+                <div class="chart-y" aria-hidden="true">
+                    {% for tick in chart.y_ticks %}
+                        <span class="y-tick num" style="top: {{ tick.pct }}%">{{ tick.label }}</span>
+                    {% endfor %}
+                </div>
+
+                <div class="chart-plot">
+                    <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}"
+                         preserveAspectRatio="none" role="img"
+                         aria-labelledby="chart-title chart-desc">
+                        <title id="chart-title">{{ symbol }} price per share in US dollars, {{ coverage }}</title>
+                        <desc id="chart-desc">
+                            From {{ chart.first | money }} to {{ chart.last | money }}:
+                            a change of {{ chart.change | signed_money }}, {{ word }} over the period.
+                            Low {{ chart.low | money }}, high {{ chart.high | money }},
+                            across {{ '{:,}'.format(chart.count) }} prices.
+                        </desc>
+
+                        {% for tick in chart.y_ticks %}
+                            <line class="chart-grid" x1="0" y1="{{ tick.y }}"
+                                  x2="{{ chart.width }}" y2="{{ tick.y }}"
+                                  vector-effect="non-scaling-stroke"></line>
+                        {% endfor %}
+                        <line class="chart-baseline" x1="0" y1="{{ chart.baseline_y }}"
+                              x2="{{ chart.width }}" y2="{{ chart.baseline_y }}"
+                              vector-effect="non-scaling-stroke"></line>
+                        <path class="chart-area" d="{{ chart.area_path }}"></path>
+                        <path class="chart-line" d="{{ chart.path }}"
+                              vector-effect="non-scaling-stroke"></path>
+                    </svg>
+                </div>
+
+                <div class="chart-x" aria-hidden="true">
+                    {% for tick in chart.x_ticks %}
+                        <span class="x-tick x-tick-{{ tick.edge }}" style="left: {{ tick.pct }}%">{{ tick.label }}</span>
+                    {% endfor %}
+                </div>
+
+                <p class="axis-title axis-title-x" aria-hidden="true">
+                    {{ 'Time (US Eastern)' if intraday else 'Date' }}
+                </p>
+            </div>
             <figcaption class="visually-hidden">
-                {{ symbol }} price over {{ range_label | lower }}.
+                {{ symbol }} price over {{ coverage }}.
             </figcaption>
         </figure>
 
-        <div class="chart-scale">
-            <span class="num">{{ chart.low | money }}</span>
-            <span class="faint">low · high</span>
-            <span class="num">{{ chart.high | money }}</span>
-        </div>
-
-        {% if needs_fetch %}
-            <p class="faint" style="margin-top:var(--s4)">
-                Only {{ chart.count }} data
-                {{ 'point' if chart.count == 1 else 'points' }} stored for this
-                range.
-            </p>
+        {% if needs_fetch and not partial %}
+            <div class="actions">
+                <p class="faint" style="margin:0">
+                    Only {{ chart.count }} {{ 'price' if chart.count == 1 else 'prices' }}
+                    stored for this range.
+                </p>
+                <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
+                      data-busy-label="Fetching…">
+                    <input type="hidden" name="range" value="{{ window }}">
+                    <button type="submit" class="btn btn-secondary btn-sm">Fetch more</button>
+                </form>
+            </div>
         {% endif %}
     {% else %}
         <div class="empty">
@@ -94,6 +148,7 @@
                     a week, so there is nothing here until you pull them.
                 {% else %}
                     Daily prices for this company have not been downloaded yet.
+                    Fetching loads its full history, so every range fills in at once.
                 {% endif %}
             </p>
             <form method="post"
@@ -102,28 +157,18 @@
                 <input type="hidden" name="range" value="{{ window }}">
                 <div class="actions">
                     <button type="submit" class="btn btn-primary">
-                        Fetch {{ range_label | lower }} of prices
+                        {{ 'Fetch prices' if intraday else 'Fetch full history' }}
                     </button>
                 </div>
             </form>
         </div>
-    {% endif %}
-
-    {% if chart and needs_fetch %}
-        <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
-              data-busy-label="Fetching…">
-            <input type="hidden" name="range" value="{{ window }}">
-            <div class="actions">
-                <button type="submit" class="btn btn-secondary btn-sm">Fetch more history</button>
-            </div>
-        </form>
     {% endif %}
 </div>
 
 {% if stats.low is not none %}
     <div class="panel">
         <div class="panel-head">
-            <h2>Over {{ range_label | lower }}</h2>
+            <h2>{{ ('Since ' ~ (stored_since | long_date)) if partial else ('Over ' ~ (range_label | lower)) }}</h2>
         </div>
         <div class="figures">
             <div>
@@ -170,18 +215,18 @@
             </dd>
         </div>
         <div>
-            <dt>The faint horizontal rule</dt>
+            <dt>The dotted rule</dt>
             <dd>
                 Where the price started this range. Above it is up over the
                 period; below it is down.
             </dd>
         </div>
         <div>
-            <dt>A steep line is not a good line</dt>
+            <dt>The price scale moves</dt>
             <dd>
-                The chart is scaled to fit whatever range you picked, so a
-                gentle rise and a dramatic one can look identical. Read the
-                numbers, not the slope.
+                The scale on the left is fitted to whatever range you picked, so
+                a gentle rise and a dramatic one can look the same shape. Read the
+                dollar figures, not the slope.
             </dd>
         </div>
     </dl>

@@ -247,3 +247,26 @@ def get_intraday_sessions(symbol, sessions):
             (symbol, symbol, sessions),
         )
         return cur.fetchall()
+
+
+def load_full_history_for_symbol(symbol):
+    """Download every available day, then record that history is complete.
+
+    The marker is only written after the download succeeds, so a failed or
+    interrupted fetch leaves the stock correctly flagged as partial.
+    """
+    from portfolio_tracker.models import stocks
+
+    added = load_history_for_symbol(symbol, period="max")
+    stocks.mark_full_history_loaded(symbol)
+    return added
+
+
+def earliest_date(symbol):
+    """The first stored trading day for a symbol, or None."""
+    with cursor() as cur:
+        cur.execute(
+            "SELECT MIN(date) FROM price_history WHERE symbol = %s",
+            (symbol,),
+        )
+        return cur.fetchone()[0]

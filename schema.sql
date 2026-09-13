@@ -23,7 +23,11 @@ CREATE TABLE IF NOT EXISTS stocks (
     company_name  TEXT,
     current_price NUMERIC
         CONSTRAINT stocks_current_price_sane
-        CHECK (current_price IS NULL OR (current_price >= 0 AND current_price <> 'NaN'))
+        CHECK (current_price IS NULL OR (current_price >= 0 AND current_price <> 'NaN')),
+    -- When every available day was last downloaded. NULL means only a
+    -- partial window is stored, so an "all time" chart must say so rather
+    -- than present six months as the whole history.
+    full_history_loaded_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS portfolio (

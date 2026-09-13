@@ -240,6 +240,14 @@ def shares(value):
     return operations.format_shares(value)
 
 
+@app.template_filter("long_date")
+def long_date(value):
+    """Mar 12, 2026 — built by hand because "%-d" fails on Windows."""
+    if value is None:
+        return ""
+    return f"{value:%b} {value.day}, {value.year}"
+
+
 @app.template_filter("percent")
 def percent(value):
     if value is None:
@@ -399,17 +407,29 @@ def stock_detail(symbol):
     if spec["days"] is not None:
         since = datetime.now(timezone.utc) - timedelta(days=spec["days"])
 
+    stored_since = None
+    partial = False
     if spec["intraday"]:
         # Trading sessions, not wall-clock hours: see get_intraday_sessions.
         series = [(ts, close) for ts, close in
                   history.get_intraday_sessions(symbol, spec["days"])]
-        needs_fetch = len(series) < 2
     else:
         series = [(day, close) for day, close in
                   history.get_series(symbol, since.date() if since else None)]
-        needs_fetch = len(series) < 2
+        # A chart can have plenty of points and still not cover its range:
+        # six months stored draws as six months under "1 year" or "All time".
+        # Unless full history is known to be loaded, check the stored span.
+        if series and not stocks.full_history_loaded(symbol):
+            stored_since = history.earliest_date(symbol)
+            if window == "all":
+                partial = True
+            elif since is not None and stored_since is not None:
+                # A week of slack covers weekends and market holidays at the
+                # start of a range.
+                partial = stored_since > since.date() + timedelta(days=7)
 
-    chart = charts.build(series)
+    needs_fetch = len(series) < 2 or partial
+    chart = charts.build(series, window=window)
 
     return render_template(
         "stock.html",
@@ -422,6 +442,8 @@ def stock_detail(symbol):
         range_label=spec["label"],
         intraday=spec["intraday"],
         needs_fetch=needs_fetch,
+        partial=partial,
+        stored_since=stored_since,
         # Taken from the plotted window itself. These previously came from a
         # separate query that, for 1D and 5D, ran over ALL stored history —
         # labelling a 1980 split-adjusted $0.04 as the one-day low.
@@ -456,9 +478,9 @@ def stock_fetch(symbol):
             added = history.load_intraday_for_symbol(symbol, period, interval)
             noun = "intraday points"
         else:
-            # "max" backfills the long ranges; already-stored days are
-            # skipped, so this tops up rather than duplicating.
-            added = history.load_history_for_symbol(symbol, period="max")
+            # "max" backfills the long ranges and records that history is now
+            # complete; already-stored days are skipped, not duplicated.
+            added = history.load_full_history_for_symbol(symbol)
             noun = "days"
     except Exception as exc:
         flash(f"Could not fetch prices for {symbol}: {exc}", "error")

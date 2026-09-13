@@ -2,6 +2,8 @@ yfinance==1.5.2
 psycopg2-binary==2.9.12
 python-dotenv==1.2.2
 pandas==2.0.3
+# zoneinfo needs this on Windows, which ships no timezone database
+tzdata==2023.3
 
 # Web interface
 Flask==3.1.3

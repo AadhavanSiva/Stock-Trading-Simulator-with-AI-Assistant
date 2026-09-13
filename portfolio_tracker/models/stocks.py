@@ -36,3 +36,24 @@ def get_all_stocks():
     with cursor() as cur:
         cur.execute("SELECT symbol FROM stocks ORDER BY symbol")
         return [row[0] for row in cur.fetchall()]
+
+
+def mark_full_history_loaded(symbol):
+    """Record that every available day of history is now stored."""
+    with cursor(commit=True) as cur:
+        cur.execute(
+            "UPDATE stocks SET full_history_loaded_at = now() WHERE symbol = %s",
+            (symbol,),
+        )
+        return cur.rowcount > 0
+
+
+def full_history_loaded(symbol):
+    """True once a complete history download has succeeded for this symbol."""
+    with cursor() as cur:
+        cur.execute(
+            "SELECT full_history_loaded_at IS NOT NULL FROM stocks WHERE symbol = %s",
+            (symbol,),
+        )
+        row = cur.fetchone()
+        return bool(row and row[0])

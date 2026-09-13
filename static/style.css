@@ -608,12 +608,62 @@ input.ticker-input {
 .chart-gain .chart-area { fill: var(--up-wash); }
 .chart-loss .chart-area { fill: var(--down-wash); }
 
-.chart-scale {
-    display: flex; justify-content: space-between; align-items: baseline;
-    gap: var(--s4); margin-top: var(--s3); padding-top: var(--s3);
-    border-top: 1px solid var(--rule);
-    font-size: .85rem; color: var(--ink-2);
+/* Axes. The plot is a stretched SVG, so labels live in HTML around it,
+   positioned by percentage to line up with the gridlines exactly. */
+.chart-frame {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "ytitle ."
+        "yaxis  plot"
+        ".      xaxis"
+        ".      xtitle";
+    column-gap: var(--s3);
 }
+.axis-title {
+    margin: 0; font-size: .64rem; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+}
+.axis-title-y { grid-area: ytitle; margin-bottom: var(--s2); }
+.axis-title-x { grid-area: xtitle; text-align: right; margin-top: var(--s1); }
+
+.chart-y { grid-area: yaxis; position: relative; min-width: 3.5rem; }
+.y-tick {
+    position: absolute; right: 0;
+    transform: translateY(-50%);
+    font-size: .74rem; color: var(--ink-3); white-space: nowrap; line-height: 1;
+}
+
+.chart-plot { grid-area: plot; min-width: 0; }
+
+.chart-x { grid-area: xaxis; position: relative; height: 1.6rem; border-top: 1px solid var(--ink); }
+.x-tick {
+    position: absolute; top: var(--s2);
+    transform: translateX(-50%);
+    font-size: .74rem; color: var(--ink-3); white-space: nowrap;
+}
+/* The outermost labels hang inward so they never overflow the frame. */
+.x-tick-start { transform: none; }
+.x-tick-end { transform: translateX(-100%); }
+.x-tick::before {
+    content: ""; position: absolute; left: 50%; top: calc(-1 * var(--s2) - 1px);
+    width: 1px; height: 5px; background: var(--ink);
+}
+.x-tick-start::before { left: 0; }
+.x-tick-end::before { left: auto; right: 0; }
+
+.chart-grid { stroke: var(--rule); stroke-width: 1; }
+
+.chart-notice {
+    display: flex; flex-wrap: wrap; gap: var(--s3) var(--s4);
+    align-items: center; justify-content: space-between;
+    background: var(--note-wash); border: 1px solid #e6d6b2;
+    border-left: 3px solid var(--note);
+    padding: var(--s3) var(--s4); margin-bottom: var(--s5);
+    font-size: .92rem; color: #5a4720;
+}
+.chart-notice p { margin: 0; max-width: 60ch; }
+.chart-notice .btn { width: auto; }
 
 .symbol-link { color: inherit; text-decoration: none; }
 .symbol-link:hover .ticker { text-decoration: underline; }
@@ -730,6 +780,8 @@ input.ticker-input {
     .actions .btn-quiet { width: auto; }
     .account .btn { width: auto; }
     .glossary dl { grid-template-columns: 1fr; }
+    .x-tick:nth-child(even):not(.x-tick-end) { display: none; }
+    .chart-y { min-width: 2.9rem; }
 
     /* Tables become records: each row a small labelled block, not a
        squeezed grid. The header is hidden and each cell carries its own
