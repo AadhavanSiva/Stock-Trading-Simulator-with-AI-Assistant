@@ -1,4 +1,4 @@
-"""The in-app assistant. The only module that talks to the Claude API.
+"""The in-app assistant. The only module that talks to the Gemini API.
 
 It answers one question at a time about the data the app hands it. It
 never reads the database or the market feed itself — the caller passes a
@@ -12,7 +12,9 @@ is worse than no chat panel.
 import logging
 from collections import namedtuple
 
-import anthropic
+import httpx
+from google import genai
+from google.genai import errors, types
 
 from portfolio_tracker import config
 
@@ -20,19 +22,21 @@ log = logging.getLogger(__name__)
 
 Answer = namedtuple("Answer", "ok text kind message")
 
-# The fallbacks parameter re-runs a declined request on another model
-# server-side. It is only accepted for these models, so a different
-# ASSISTANT_MODEL simply goes without it rather than getting a 400.
-_FALLBACK_MODELS = ("claude-opus-5", "claude-fable-5-1", "claude-fable-5")
-_FALLBACK_BETA = "server-side-fallback-2026-07-01"
-
 MAX_QUESTION_CHARS = 1000
 MAX_EARLIER_TURNS = 3
 _MAX_EARLIER_CHARS = 1500
 
-# Frozen: no dates, names or figures, so every request shares this prefix
-# and it is served from the prompt cache. Anything that varies goes in the
-# user message, after it.
+# Thinking tokens count toward the output limit on Gemini, so this leaves
+# room to reason and still finish a short answer.
+_MAX_OUTPUT_TOKENS = 8192
+_THINKING_LEVELS = ("low", "medium", "high")
+
+# Finish reasons that mean the answer was withheld, not that it ended
+# normally. Any text alongside them is discarded rather than shown.
+_WITHHELD = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
+
+# Frozen: no dates, names or figures, so every request carries the same
+# instructions. Anything that varies goes in the user contents.
 SYSTEM_PROMPT = """You are the guide inside Portfolio Tracker, a practice investing app. The people using it are beginners learning how investing works. Each account starts with $50,000 of pretend money, and they buy real companies at real market prices.
 
 People open you from whatever page they are on and ask about a stock, their holdings, or an idea they have come across. Your job is to help them understand, so they can make their own decisions with clearer eyes.
@@ -60,13 +64,16 @@ _client = None
 
 
 def _get_client():
-    """One shared client. Constructing it does not check credentials — the
-    SDK resolves those at request time — so this cannot fail on its own."""
+    """One shared client, created on first use.
+
+    Unlike some SDKs, google-genai checks for a key when the client is
+    constructed and raises ValueError if there is none. A failed attempt
+    is not cached, so adding a key and restarting is all it takes.
+    """
     global _client
     if _client is None:
-        # A person is waiting on this. Keep the worst case bounded: the SDK
-        # retries on timeout, so wall-clock can reach timeout * (retries + 1).
-        _client = anthropic.Anthropic(timeout=90.0, max_retries=1)
+        # A person is waiting on this; timeout is in milliseconds.
+        _client = genai.Client(http_options=types.HttpOptions(timeout=90_000))
     return _client
 
 
@@ -78,10 +85,9 @@ def _clip(text, limit):
 def build_user_message(context, question, earlier=()):
     """Assemble the one user turn: app data, recent exchanges, the question.
 
-    Earlier exchanges are quoted inside this single user message rather than
-    replayed as assistant turns. Each request stays self-contained, the app
-    data is always current, and there is no stored model history to keep
-    consistent between requests.
+    Earlier exchanges are quoted inside this single message rather than
+    replayed as model turns. Each request stays self-contained, the app data
+    is always current, and no stored conversation has to be kept in sync.
     """
     parts = [f"<app_data>\n{context.strip()}\n</app_data>"]
 
@@ -102,6 +108,31 @@ def build_user_message(context, question, earlier=()):
     return "\n\n".join(parts)
 
 
+def _request_config():
+    thinking = config.ASSISTANT_THINKING
+    if thinking not in _THINKING_LEVELS:
+        # An unsupported level is a 400 from the API; fall back rather than
+        # break the panel over a typo in .env.
+        log.warning("ASSISTANT_THINKING=%r is not low/medium/high; using medium", thinking)
+        thinking = "medium"
+
+    return types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
+        thinking_config=types.ThinkingConfig(thinking_level=thinking),
+        # No tools are passed; switching automatic function calling off
+        # also stops the SDK logging a warning on every request.
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+    )
+
+
+def _reason_name(value):
+    """Enum or string -> 'SAFETY'. The SDK returns enums; be tolerant."""
+    if value is None:
+        return None
+    return getattr(value, "name", str(value)).upper()
+
+
 def ask(context, question, earlier=()):
     """Answer one question against the given app data. Never raises."""
     if not config.ASSISTANT_ENABLED:
@@ -116,107 +147,117 @@ def ask(context, question, earlier=()):
             f"That question is too long. Keep it under {MAX_QUESTION_CHARS} characters.",
         )
 
-    request = {
-        "model": config.ASSISTANT_MODEL,
-        "max_tokens": 16000,
-        "thinking": {"type": "adaptive"},
-        "output_config": {"effort": config.ASSISTANT_EFFORT},
-        "system": [{
-            "type": "text",
-            "text": SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        "messages": [{
-            "role": "user",
-            "content": build_user_message(context, question, earlier),
-        }],
-    }
-    if config.ASSISTANT_MODEL in _FALLBACK_MODELS:
-        request["betas"] = [_FALLBACK_BETA]
-        request["fallbacks"] = "default"
+    try:
+        client = _get_client()
+    except ValueError:
+        return _not_configured()
 
     try:
-        response = _get_client().beta.messages.create(**request)
-    except TypeError as exc:
-        # No credentials at all surfaces as a TypeError from the SDK, not an
-        # API error, so the chain below would never see it.
-        if "authentication" in str(exc).lower():
-            return _not_configured()
-        raise
-    except anthropic.AuthenticationError:
-        return Answer(
-            False, "", "not_configured",
-            "The assistant's API key was rejected. Check ANTHROPIC_API_KEY in "
-            "your .env file, then restart the server.",
+        response = client.models.generate_content(
+            model=config.ASSISTANT_MODEL,
+            contents=build_user_message(context, question, earlier),
+            config=_request_config(),
         )
-    except anthropic.PermissionDeniedError:
-        return Answer(
-            False, "", "not_configured",
-            "The API key works but is not allowed to use this model. Check the "
-            "key's workspace permissions, or set ASSISTANT_MODEL in .env.",
-        )
-    except anthropic.RateLimitError:
-        return Answer(
-            False, "", "busy",
-            "The assistant is getting too many questions right now. Wait a "
-            "minute and ask again.",
-        )
-    except anthropic.BadRequestError as exc:
-        log.warning("assistant bad request: %s", exc)
+    except errors.ClientError as exc:
+        return _client_error(exc)
+    except errors.ServerError as exc:
+        log.warning("assistant server error %s: %s", exc.code, exc.message)
         return Answer(
             False, "", "failed",
-            "That question could not be processed. Try rephrasing it.",
+            "The assistant service is having trouble. Try again in a few minutes.",
         )
-    except anthropic.APITimeoutError:
+    except errors.APIError as exc:
+        log.warning("assistant API error %s: %s", exc.code, exc.message)
+        return Answer(False, "", "failed", "Something went wrong asking the assistant. Try again.")
+    # Network failures surface as raw httpx exceptions, not API errors.
+    # TimeoutException is itself a RequestError, so it is checked first.
+    except httpx.TimeoutException:
         return Answer(
             False, "", "failed",
             "The assistant took too long to answer. Try a shorter or simpler question.",
         )
-    except anthropic.APIConnectionError:
+    except httpx.RequestError:
         return Answer(
             False, "", "failed",
             "Could not reach the assistant. Check your internet connection and try again.",
         )
-    except anthropic.APIStatusError as exc:
-        log.warning("assistant API error %s: %s", exc.status_code, exc)
-        if exc.status_code >= 500:
-            message = "The assistant service is having trouble. Try again in a few minutes."
-        else:
-            message = "Something went wrong asking the assistant. Try again."
-        return Answer(False, "", "failed", message)
 
-    log.debug(
-        "assistant request %s: cache read %s, cache write %s, input %s",
-        getattr(response, "_request_id", None),
-        getattr(response.usage, "cache_read_input_tokens", None),
-        getattr(response.usage, "cache_creation_input_tokens", None),
-        getattr(response.usage, "input_tokens", None),
-    )
+    feedback = getattr(response, "prompt_feedback", None)
+    if feedback is not None and getattr(feedback, "block_reason", None):
+        log.info("assistant prompt blocked: %s", _reason_name(feedback.block_reason))
+        return _refused()
 
-    # A decline — by the requested model and any fallback — arrives as a
-    # normal response, so check before reading content.
-    if response.stop_reason == "refusal":
-        return Answer(
-            False, "", "refused",
-            "The assistant can't help with that question. Try asking what the "
-            "numbers on this page mean, or how a term like average cost works.",
-        )
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return Answer(False, "", "failed", "The assistant didn't produce an answer. Try asking again.")
 
+    candidate = candidates[0]
+    if _reason_name(getattr(candidate, "finish_reason", None)) in _WITHHELD:
+        return _refused()
+
+    content = getattr(candidate, "content", None)
+    parts = getattr(content, "parts", None) or []
+    # Thought summaries are only returned when asked for, but never show
+    # one as if it were the answer.
     text = "".join(
-        block.text for block in response.content if getattr(block, "type", None) == "text"
+        part.text for part in parts
+        if getattr(part, "text", None) and not getattr(part, "thought", False)
     ).strip()
 
     if not text:
-        return Answer(
-            False, "", "failed",
-            "The assistant didn't produce an answer. Try asking again.",
-        )
+        if _reason_name(getattr(candidate, "finish_reason", None)) == "MAX_TOKENS":
+            return Answer(
+                False, "", "failed",
+                "The assistant ran out of room before answering. Try a narrower question.",
+            )
+        return Answer(False, "", "failed", "The assistant didn't produce an answer. Try asking again.")
+
     return Answer(True, text, "answered", "")
+
+
+def _client_error(exc):
+    message = str(exc.message or "")
+    # An invalid key is a 400 INVALID_ARGUMENT on Gemini, not a 401, so the
+    # status code alone would send someone off to rephrase their question.
+    if "api key not valid" in message.lower() or "API_KEY_INVALID" in str(exc.details or ""):
+        return Answer(
+            False, "", "not_configured",
+            "The Gemini API key was rejected. Check GEMINI_API_KEY in your .env "
+            "file, then restart the server.",
+        )
+    if exc.code in (401, 403):
+        return Answer(
+            False, "", "not_configured",
+            "The Gemini API key isn't allowed to use this model. Check the key's "
+            "project in Google AI Studio, or set ASSISTANT_MODEL in .env.",
+        )
+    if exc.code == 404:
+        return Answer(
+            False, "", "not_configured",
+            f"The model '{config.ASSISTANT_MODEL}' isn't available. Set "
+            "ASSISTANT_MODEL in .env to a current Gemini model.",
+        )
+    if exc.code == 429:
+        return Answer(
+            False, "", "busy",
+            "The assistant has hit its usage limit for now. Wait a minute and ask "
+            "again — free Gemini keys have low per-minute limits.",
+        )
+    log.warning("assistant client error %s: %s", exc.code, message)
+    return Answer(False, "", "failed", "That question could not be processed. Try rephrasing it.")
+
+
+def _refused():
+    return Answer(
+        False, "", "refused",
+        "The assistant can't help with that question. Try asking what the "
+        "numbers on this page mean, or how a term like average cost works.",
+    )
 
 
 def _not_configured():
     return Answer(
         False, "", "not_configured",
-        "The assistant isn't set up yet. Add ANTHROPIC_API_KEY=your_key to the "
-        ".env file (create a key at console.anthropic.com), then restart the server.",
+        "The assistant isn't set up yet. Add GEMINI_API_KEY=your_key to the .env "
+        "file (create a key at aistudio.google.com/apikey), then restart the server.",
     )

@@ -43,26 +43,27 @@ def isolated_auth_config(monkeypatch):
     # Same reasoning for the assistant: an ASSISTANT_MODEL in someone's .env
     # must not change what the tests assert.
     monkeypatch.setattr(config, "ASSISTANT_ENABLED", True)
-    monkeypatch.setattr(config, "ASSISTANT_MODEL", "claude-opus-5")
-    monkeypatch.setattr(config, "ASSISTANT_EFFORT", "medium")
+    monkeypatch.setattr(config, "ASSISTANT_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(config, "ASSISTANT_THINKING", "medium")
 
 
 class _NoRealAPICalls:
-    """Stands in for the Anthropic client during tests.
+    """Stands in for the Gemini client during tests.
 
     A test that forgets to mock the client would otherwise reach the real
-    API — silently spending money whenever the machine running the suite
-    has a key configured. This makes that mistake fail loudly instead.
+    API — using quota, and on a free key sending test data to Google —
+    whenever the machine running the suite has a key configured. This
+    makes that mistake fail loudly instead.
     """
-    class _Messages:
-        def create(self, **kwargs):
+    class _Models:
+        def generate_content(self, **kwargs):
             raise AssertionError(
-                "A test tried to call the real Claude API. Patch "
+                "A test tried to call the real Gemini API. Patch "
                 "portfolio_tracker.services.assistant._get_client."
             )
 
     def __init__(self):
-        self.beta = type("Beta", (), {"messages": self._Messages()})()
+        self.models = self._Models()
 
 
 @pytest.fixture(autouse=True)

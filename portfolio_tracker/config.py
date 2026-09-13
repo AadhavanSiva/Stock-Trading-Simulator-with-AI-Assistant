@@ -41,13 +41,11 @@ PORTFOLIO_USER = os.getenv("PORTFOLIO_USER")
 STARTING_CASH = os.getenv("STARTING_CASH", "50000")
 
 # --- AI assistant -----------------------------------------------------------
-# Credentials are resolved by the Anthropic SDK itself: ANTHROPIC_API_KEY in
-# .env, or ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile. Nothing here
-# reads or stores a key. With no credentials the assistant explains how to
-# set one up instead of failing.
+# Runs on Google's Gemini API. The SDK reads the key from GEMINI_API_KEY (or
+# GOOGLE_API_KEY) itself; nothing here reads or stores it. GEMINI_API_KEY is
+# the one to use, so it is not confused with the GOOGLE_CLIENT_* sign-in
+# settings above. Without a key the assistant explains how to add one.
 ASSISTANT_ENABLED = os.getenv("ASSISTANT_ENABLED", "1").strip().lower() not in ("0", "false", "no")
-ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "claude-opus-5")
-# Answers here are short explanations for beginners, where lower effort keeps
-# replies quick; raise it if answers feel shallow.
-ASSISTANT_EFFORT = os.getenv("ASSISTANT_EFFORT", "medium")
-
+ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "gemini-3.8-flash")
+# How much the model reasons before answering: low, medium or high.
+ASSISTANT_THINKING = os.getenv("ASSISTANT_THINKING", "medium").strip().lower()

@@ -114,9 +114,10 @@ keeping each span's high and low; every printed figure uses the full series.
 ## Assistant
 
 A panel on every signed-in page answers questions about the stock you are
-looking at, or about your portfolio. It runs on Claude (`claude-opus-5`) via the
-official `anthropic` SDK, from `portfolio_tracker/services/assistant.py` — the
-only module that talks to the API.
+looking at, or about your portfolio. It runs on Google's Gemini
+(`gemini-3.8-flash`) through the official `google-genai` SDK, from
+`portfolio_tracker/services/assistant.py` — the only module that talks to the
+API.
 
 It is grounded, and scoped to teaching:
 
@@ -130,15 +131,25 @@ It is grounded, and scoped to teaching:
 - **It says when it doesn't know.** Earnings, ratios and news are not in the
   app's data, so it says so rather than inventing them.
 
-Set `ANTHROPIC_API_KEY` in `.env` to switch it on. Without a key the panel
-explains the setup rather than failing. With JavaScript off, the "Ask" button
-opens a plain page that does the same thing.
+Set `GEMINI_API_KEY` in `.env` to switch it on — create one at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). The SDK also
+accepts `GOOGLE_API_KEY`, but use `GEMINI_API_KEY` so it is not confused with
+the `GOOGLE_CLIENT_*` sign-in settings. Without a key the panel explains the
+setup rather than failing. With JavaScript off, the "Ask" button opens a plain
+page that does the same thing.
 
-Operational details: the system prompt is frozen and cached, with all varying
-data in the user turn; refusal fallbacks are enabled (`fallbacks: "default"`);
-each account is limited to 20 questions per 10 minutes; and API errors become
-plain messages rather than stack traces. The test suite blocks any real API
-call, so running it never spends money.
+**Privacy on a free key.** Under Google's Gemini API terms, content sent on the
+free tier may be used to improve Google's products and read by human
+reviewers, and Google advises against sending personal information. A paid,
+billing-enabled key does not use prompts that way. The assistant never sends
+your name or email, and the panel reminds people to leave personal details
+out of questions.
+
+Operational details: refused or safety-blocked answers are withheld rather than
+shown partially; an invalid key (which Gemini reports as HTTP 400, not 401) is
+recognised and explained; each account is limited to 20 questions per 10
+minutes; and API or network errors become plain messages rather than stack
+traces. The test suite blocks any real API call.
 
 ## Motion
 
