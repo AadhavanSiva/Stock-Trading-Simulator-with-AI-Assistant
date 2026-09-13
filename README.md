@@ -69,6 +69,33 @@ handler or a CLI prompt. `operations.py` returns plain values and never prints o
 renders, which is what lets the terminal and the browser share it without either
 one bending to suit the other.
 
+## Design
+
+The front end follows one idea: **investing is patient bookkeeping, not a
+trading floor.** So the interface is built like a ruled ledger — warm paper,
+hairline rules, figures in tabular numerals aligned right, column heads in
+small wide-tracked capitals, and a single vermilion mark used the way a
+bookkeeper's red pen is used: rarely, and to point at one thing.
+
+Gains and losses get identical treatment. The figure itself stays ink-coloured;
+direction is carried by an arrow and a word, with a tinted tag as a third
+signal. That reads correctly in greyscale, to a screen reader, and to anyone
+who cannot separate red from green — and it means a gain is never celebrated
+over a loss. There is no confetti anywhere, deliberately: this app teaches
+beginners, and buying should not feel like winning.
+
+The landing page carries one WebGL scene — a drifting point field on faint
+ruled lines, all geometry generated in `static/hero.js`, no textures or
+imported models. It sits behind a finished static background and declines to
+run at all on low-core or low-memory devices, on small touch screens, under
+Save-Data, without WebGL, or under reduced motion. It stops rendering when the
+tab is hidden or the hero scrolls out of view. Three.js is pinned to r128 with
+a subresource-integrity hash and loads on that page only; every other page is
+flat CSS.
+
+Landing page weight: 5.7 KB of HTML, 48 KB of local CSS and JS, plus a deferred
+603 KB Three.js (~150 KB gzipped) — 0.63 MB against a 1 MB budget.
+
 ## Motion
 
 Scroll-driven animation is done natively with CSS `animation-timeline: view()`

@@ -280,6 +280,10 @@ def index():
         "portfolio.html",
         motion="calm",
         summary=operations.account_summary(g.user_id),
+        # Names the position just traded, so its row settles in rather than
+        # appearing without explanation. Identical for a buy and a sell —
+        # a trade is a decision, not an achievement.
+        just_changed=(request.args.get("changed") or "").upper() or None,
     )
 
 
@@ -364,6 +368,40 @@ def buy_confirm():
         "success",
     )
     return redirect(url_for("index"))
+
+
+# --------------------------------------------------------------- lookup
+
+@app.route("/api/quote")
+@login_required
+def api_quote():
+    """Resolve a ticker to a company name and price, for the buy form.
+
+    Progressive enhancement only: the buy page works without this, the
+    server does the same lookup on submit. It exists so a typo shows up
+    as "no market data found" while you are still typing, rather than
+    after you commit.
+
+    Decimals are formatted to strings here — JSON has no decimal type,
+    and routing money through a float to serialise it is exactly the bug
+    the rest of this codebase avoids.
+    """
+    try:
+        quote = operations.look_up(g.user_id, request.args.get("symbol", ""))
+    except ValidationError as exc:
+        return {"ok": False, "error": str(exc)}, 400
+
+    return {
+        "ok": True,
+        "symbol": quote.symbol,
+        "company_name": quote.company_name,
+        "price": f"{quote.price:.2f}",
+        "price_display": f"${quote.price:,.2f}",
+        "cash_display": f"${quote.cash:,.2f}",
+        "affordable": operations.format_shares(quote.affordable),
+        "owned": (operations.format_shares(quote.owned)
+                  if quote.owned is not None else None),
+    }
 
 
 # ------------------------------------------------------------------- sell
@@ -473,7 +511,7 @@ def sell_confirm(symbol):
     )
     message += f" Cash available: ${sale.cash:,.2f}."
     flash(message, "success")
-    return redirect(url_for("index"))
+    return redirect(url_for("index", changed=None if sale.closed else sale.symbol))
 
 
 # ---------------------------------------------------------------- history

@@ -50,8 +50,8 @@ class TestAuthGate:
         response = anon.get("/")
         assert response.status_code == 200
         body = text(response)
-        assert "Get started" in body
-        assert "I already have an account" in body
+        assert "Open an account" in body
+        assert "I already have one" in body
 
     def test_landing_page_offers_both_doors(self, anon):
         body = text(anon.get("/"))
@@ -59,7 +59,7 @@ class TestAuthGate:
         assert 'href="/login"' in body
 
     def test_signup_page_renders(self, anon):
-        assert "Create your account" in text(anon.get("/signup"))
+        assert "Open an account" in text(anon.get("/signup"))
 
     def test_signup_redirects_to_the_portfolio_when_already_signed_in(self, client):
         response = client.get("/signup")
@@ -83,7 +83,7 @@ class TestAuthGate:
     def test_login_page_renders(self, anon):
         body = text(anon.get("/login"))
         assert "Log in" in body
-        assert "Create an account" in body
+        assert "Open an account" in body
 
     def test_login_page_explains_setup_when_google_is_unconfigured(self, anon):
         body = text(anon.get("/login"))
@@ -96,7 +96,7 @@ class TestAuthGate:
     def test_logout_clears_the_session(self, client):
         client.get("/logout")
         # Signed out, `/` shows the landing page rather than the portfolio.
-        assert "Get started" in text(client.get("/"))
+        assert "Open an account" in text(client.get("/"))
         assert client.get("/balance").status_code == 302
 
     def test_session_pointing_at_a_deleted_account_is_cleared(self, client, user):
@@ -152,7 +152,7 @@ class TestBalancePage:
 class TestPortfolioPage:
     def test_empty_state_mentions_the_starting_cash(self, client):
         body = text(client.get("/"))
-        assert "Your portfolio is empty" in body
+        assert "Nothing bought yet" in body
         assert "$50,000.00" in body
 
     def test_lists_holdings_with_company_name(self, client, user):
@@ -340,7 +340,7 @@ class TestSellFlow:
 
 class TestHistoryPage:
     def test_empty_state(self, client):
-        assert "No price history yet" in text(client.get("/history"))
+        assert "No history to show yet" in text(client.get("/history"))
 
     def test_lists_holdings(self, client, user):
         own(user, "AAPL", 10, 100, name="Apple Inc.")
@@ -351,7 +351,7 @@ class TestHistoryPage:
 
 class TestActions:
     def test_page_renders(self, client):
-        assert "Refresh prices" in text(client.get("/actions"))
+        assert "Fetch prices" in text(client.get("/actions"))
 
     def test_refresh_reports_what_happened(self, client, user):
         own(user, "AAPL", 10, 100)

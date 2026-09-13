@@ -1,72 +1,60 @@
 {% extends "base.html" %}
+{% from "_delta.html" import delta %}
 {% set active = 'sell' %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Sell'}] %}
 {% block title %}Sell · Portfolio Tracker{% endblock %}
 
 {% block content %}
 {% if not summary.rows %}
-    <div class="card">
+    <div class="panel">
         <div class="empty">
-            <div class="empty-mark" aria-hidden="true">🌱</div>
+            <div class="empty-rule" aria-hidden="true"></div>
             <h2>Nothing to sell yet</h2>
             <p>
-                You'll be able to sell once you own something. Selling turns
-                an investment back into money, and locks in whatever gain or
-                loss it has made.
+                Selling turns an investment back into cash and settles whatever
+                gain or loss it has made. You'll be able to do that once you own
+                something.
             </p>
-            <div class="actions-row">
-                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first stock</a>
+            <div class="actions">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first shares</a>
             </div>
         </div>
     </div>
 {% else %}
     <div class="page-head">
-        <h1>Sell a stock</h1>
-        <p class="lede">
-            Choose what you'd like to sell. You can sell part of a holding or
-            all of it — and you'll get to confirm before anything happens.
-        </p>
+        <p class="label">Step 1 of 3 · Choose</p>
+        <h1>Sell</h1>
+        <p class="lede">Pick a holding. You can sell part of it or all of it.</p>
     </div>
 
-    <div class="card">
+    <div class="panel">
         <div class="table-scroll">
-            <table>
+            <table data-sortable class="stack-on-mobile">
+                <caption class="visually-hidden">Your holdings, each with a sell action.</caption>
                 <thead>
                 <tr>
-                    <th scope="col">Investment</th>
-                    <th scope="col" class="align-right">Shares owned</th>
-                    <th scope="col" class="align-right">Price today</th>
-                    <th scope="col" class="align-right">Worth now</th>
-                    <th scope="col" class="align-right">Gain or loss</th>
+                    <th scope="col" data-sort="text">Investment</th>
+                    <th scope="col" class="r" data-sort="number">Owned</th>
+                    <th scope="col" class="r" data-sort="number">Today</th>
+                    <th scope="col" class="r" data-sort="number">Worth</th>
+                    <th scope="col" class="r" data-sort="number">Difference</th>
                     <th scope="col"><span class="visually-hidden">Action</span></th>
                 </tr>
                 </thead>
                 <tbody class="stagger">
                 {% for row in summary.rows %}
-                    {% set dir, arrow, word = movement(row.gain_loss) %}
                     <tr>
-                        <td>
+                        <td data-value="{{ row.symbol }}">
                             <span class="ticker">{{ row.symbol }}</span>
                             <span class="company">{{ row.company_name }}</span>
                         </td>
-                        <td class="align-right numeric">{{ row.shares | shares }}</td>
-                        <td class="align-right numeric">{{ row.current_price | money }}</td>
-                        <td class="align-right numeric">{{ row.value | money }}</td>
-                        <td class="align-right">
-                            {% if row.gain_loss is none %}
-                                <span class="change change-unknown">
-                                    <span class="change-label">Not priced yet</span>
-                                </span>
-                            {% else %}
-                                <span class="change change-{{ dir }}">
-                                    <span class="arrow" aria-hidden="true">{{ arrow }}</span>
-                                    <span>{{ row.gain_loss | signed_money }}</span>
-                                    <span class="change-label">{{ word }}</span>
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td class="align-right">
-                            <a class="btn btn-secondary"
-                               href="{{ url_for('sell_quantity', symbol=row.symbol) }}">Sell</a>
+                        <td class="r num" data-label="Owned" data-value="{{ row.shares }}">{{ row.shares | shares }}</td>
+                        <td class="r num" data-label="Today" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
+                        <td class="r num" data-label="Worth" data-value="{{ row.value or 0 }}">{{ row.value | money }}</td>
+                        <td class="r" data-label="Difference" data-value="{{ row.gain_loss or 0 }}">{{ delta(row.gain_loss) }}</td>
+                        <td class="r" data-label="">
+                            <a class="btn btn-secondary btn-sm"
+                               href="{{ url_for('sell_quantity', symbol=row.symbol) }}">Sell {{ row.symbol }}</a>
                         </td>
                     </tr>
                 {% endfor %}

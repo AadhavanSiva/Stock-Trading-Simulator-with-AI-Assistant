@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Get started · Portfolio Tracker{% endblock %}
+{% block title %}Open an account · Portfolio Tracker{% endblock %}
 
 {% block content %}
-<div class="auth-shell">
-    <div class="card">
-        <div class="auth-head">
-            <p class="eyebrow">Create your account</p>
+<div class="gate">
+    <div class="panel">
+        <div class="gate-head">
+            <p class="label label-mark">Open an account</p>
             <h1>Start with ${{ '{:,.0f}'.format(starting_cash) }}</h1>
-            <p>Practice money, real prices. Nothing to pay, ever.</p>
+            <p>Pretend money, real prices. Nothing to pay, ever.</p>
         </div>
 
         {% with button_label = 'Sign up with Google' %}
             {% include "_auth_options.html" %}
         {% endwith %}
 
-        <ul class="perk-list">
-            <li><span class="tick" aria-hidden="true">✓</span> Your account is created the first time you sign in</li>
-            <li><span class="tick" aria-hidden="true">✓</span> We ask Google only for your name and email</li>
-            <li><span class="tick" aria-hidden="true">✓</span> No card, no cost, no real money involved</li>
+        <ul class="checks">
+            <li><span class="tick" aria-hidden="true">—</span> Your account is created the first time you sign in</li>
+            <li><span class="tick" aria-hidden="true">—</span> Google is asked only for your name and email</li>
+            <li><span class="tick" aria-hidden="true">—</span> No card, no cost, no real money anywhere</li>
         </ul>
 
-        <p class="auth-alt">
+        <p class="gate-alt">
             Already have an account? <a href="{{ url_for('login') }}">Log in</a>
         </p>
     </div>

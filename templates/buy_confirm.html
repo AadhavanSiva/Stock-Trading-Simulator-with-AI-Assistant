@@ -1,49 +1,49 @@
 {% extends "base.html" %}
 {% set active = 'buy' %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Buy', 'url': url_for('buy_start')}, {'label': quote.symbol, 'url': url_for('buy_start', symbol=quote.symbol)}, {'label': 'Confirm'}] %}
 {% block title %}Confirm purchase · Portfolio Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
-    <h1>Ready to buy?</h1>
-    <p class="lede">Step 3 of 3 — check this over. Nothing happens until you confirm.</p>
+    <p class="label">Step 3 of 3 · Confirm</p>
+    <h1>Check this over</h1>
+    <p class="lede">Nothing has happened yet. This is the last step.</p>
 </div>
 
-<div class="card">
+<div class="panel">
     <h2>{{ quote.company_name }}</h2>
-    <p class="muted">{{ quote.symbol }}</p>
+    <p class="quote-sym">{{ quote.symbol }}</p>
 
-    <dl class="review">
-        <div class="review-row">
+    <dl class="ledger">
+        <div class="ledger-row">
             <dt>Shares</dt>
-            <dd class="numeric">{{ shares | shares }}</dd>
+            <dd class="num">{{ shares | shares }}</dd>
         </div>
-        <div class="review-row">
+        <div class="ledger-row">
             <dt>Price per share</dt>
-            <dd class="numeric">{{ quote.price | money }}</dd>
+            <dd class="num">{{ quote.price | money }}</dd>
         </div>
-        <div class="review-row review-total">
+        <div class="ledger-row ledger-total">
             <dt>Total cost</dt>
-            <dd class="numeric">{{ cost | money }}</dd>
+            <dd class="num">{{ cost | money }}</dd>
         </div>
-        <div class="review-row">
-            <dt>Cash left afterwards</dt>
-            <dd class="numeric">{{ cash_after | money }}</dd>
+        <div class="ledger-row">
+            <dt>Cash afterwards</dt>
+            <dd class="num">{{ cash_after | money }}</dd>
         </div>
     </dl>
 
-    <p class="faint">
-        The market price moves constantly. If it changes in the next few
-        seconds, you'll pay the price at the moment you confirm, and we'll
-        tell you what that was.
+    <p class="faint" style="margin-top:var(--s4)">
+        Market prices move constantly. You'll pay the price at the moment you
+        confirm, and we'll tell you exactly what that was.
     </p>
 
-    <form method="post" action="{{ url_for('buy_confirm') }}">
+    <form method="post" action="{{ url_for('buy_confirm') }}" data-busy-label="Buying…">
         <input type="hidden" name="symbol" value="{{ quote.symbol }}">
         <input type="hidden" name="shares" value="{{ shares }}">
-        <div class="actions-row">
-            <button type="submit" class="btn btn-primary">Yes, buy it</button>
-            <a class="btn btn-secondary"
-               href="{{ url_for('buy_start', symbol=quote.symbol) }}">Change amount</a>
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">Buy {{ shares | shares }} {{ 'share' if shares == 1 else 'shares' }}</button>
+            <a class="btn btn-secondary" href="{{ url_for('buy_start', symbol=quote.symbol) }}">Change amount</a>
             <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
         </div>
     </form>

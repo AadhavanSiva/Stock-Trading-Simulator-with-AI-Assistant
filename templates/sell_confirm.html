@@ -1,67 +1,60 @@
 {% extends "base.html" %}
+{% from "_delta.html" import delta %}
 {% set active = 'sell' %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Sell', 'url': url_for('sell_start')}, {'label': symbol, 'url': url_for('sell_quantity', symbol=symbol)}, {'label': 'Confirm'}] %}
 {% block title %}Confirm sale · Portfolio Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
-    <h1>Ready to sell?</h1>
-    <p class="lede">Step 2 of 2 — check this over. Nothing happens until you confirm.</p>
+    <p class="label">Step 3 of 3 · Confirm</p>
+    <h1>Check this over</h1>
+    <p class="lede">Nothing has happened yet. This is the last step.</p>
 </div>
 
-<div class="card">
+<div class="panel">
     <h2>{{ company_name }}</h2>
-    <p class="muted">{{ symbol }}</p>
+    <p class="quote-sym">{{ symbol }}</p>
 
-    {% set dir, arrow, word = movement(gain) %}
-
-    <dl class="review">
-        <div class="review-row">
+    <dl class="ledger">
+        <div class="ledger-row">
             <dt>Shares to sell</dt>
-            <dd class="numeric">{{ shares | shares }}</dd>
+            <dd class="num">{{ shares | shares }}</dd>
         </div>
-        <div class="review-row">
+        <div class="ledger-row">
             <dt>Price per share</dt>
-            <dd class="numeric">{{ price | money }}</dd>
+            <dd class="num">{{ price | money }}</dd>
         </div>
-        <div class="review-row">
-            <dt>Gain or loss you'd lock in</dt>
-            <dd>
-                <span class="change change-{{ dir }}">
-                    <span class="arrow" aria-hidden="true">{{ arrow }}</span>
-                    <span>{{ gain | signed_money }}</span>
-                    <span class="change-label">{{ word }}</span>
-                </span>
-            </dd>
+        <div class="ledger-row">
+            <dt>Difference you would settle</dt>
+            <dd>{{ delta(gain) }}</dd>
         </div>
-        <div class="review-row review-total">
-            <dt>You'd receive</dt>
-            <dd class="numeric">{{ proceeds | money }}</dd>
+        <div class="ledger-row ledger-total">
+            <dt>You would receive</dt>
+            <dd class="num">{{ proceeds | money }}</dd>
         </div>
-        <div class="review-row">
+        <div class="ledger-row">
             <dt>Cash afterwards</dt>
-            <dd class="numeric">{{ cash_after | money }}</dd>
+            <dd class="num">{{ cash_after | money }}</dd>
         </div>
     </dl>
 
     {% if closes %}
-        <p class="muted">
-            This sells everything you own of {{ symbol }}, so it will be
-            removed from your portfolio.
+        <p class="muted" style="margin-top:var(--s4)">
+            This sells everything you own of {{ symbol }}, so it will leave your
+            portfolio.
         </p>
     {% endif %}
 
     <p class="faint">
-        A gain only becomes real when you sell — that's what this does.
-        If the market price moves in the next few seconds, you'll get the
-        price at the moment you confirm.
+        A difference on paper only becomes real money when you sell — that is
+        what this does. You will get the price at the moment you confirm.
     </p>
 
-    <form method="post" action="{{ url_for('sell_confirm', symbol=symbol) }}">
+    <form method="post" action="{{ url_for('sell_confirm', symbol=symbol) }}" data-busy-label="Selling…">
         <input type="hidden" name="shares" value="{{ shares }}">
-        <div class="actions-row">
-            <button type="submit" class="btn btn-primary">Yes, sell</button>
-            <a class="btn btn-secondary"
-               href="{{ url_for('sell_quantity', symbol=symbol) }}">Change amount</a>
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">Sell {{ shares | shares }} {{ 'share' if shares == 1 else 'shares' }}</button>
+            <a class="btn btn-secondary" href="{{ url_for('sell_quantity', symbol=symbol) }}">Change amount</a>
             <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
         </div>
     </form>

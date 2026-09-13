@@ -2,10 +2,10 @@
 {% block title %}Log in · Portfolio Tracker{% endblock %}
 
 {% block content %}
-<div class="auth-shell">
-    <div class="card">
-        <div class="auth-head">
-            <p class="eyebrow">Welcome back</p>
+<div class="gate">
+    <div class="panel">
+        <div class="gate-head">
+            <p class="label label-mark">Welcome back</p>
             <h1>Log in</h1>
             <p>Pick up where you left off.</p>
         </div>
@@ -14,13 +14,13 @@
             {% include "_auth_options.html" %}
         {% endwith %}
 
-        <p class="auth-note">
-            Use the same Google account you signed up with — that's what your
-            portfolio is tied to.
+        <p class="gate-note">
+            Use the same Google account you signed up with — that is what your
+            portfolio is attached to.
         </p>
 
-        <p class="auth-alt">
-            New here? <a href="{{ url_for('signup') }}">Create an account</a>
+        <p class="gate-alt">
+            New here? <a href="{{ url_for('signup') }}">Open an account</a>
         </p>
     </div>
 </div>

@@ -2,13 +2,17 @@
 {% block title %}{{ code }} · Portfolio Tracker{% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="panel">
     <div class="empty">
-        <div class="empty-mark" aria-hidden="true">🧭</div>
+        <div class="empty-rule" aria-hidden="true"></div>
+        <p class="label">Error {{ code }}</p>
         <h2>{{ message }}</h2>
-        <p>Let's get you back to somewhere useful.</p>
-        <div class="actions-row">
-            <a class="btn btn-primary" href="{{ url_for('index') }}">Back to my portfolio</a>
+        <p>
+            The address may be mistyped, or the page may have moved. Nothing
+            in your account has changed.
+        </p>
+        <div class="actions">
+            <a class="btn btn-primary" href="{{ url_for('index') }}">Back to your portfolio</a>
         </div>
     </div>
 </div>

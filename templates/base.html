@@ -4,39 +4,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Portfolio Tracker{% endblock %}</title>
+    <meta name="description" content="A practice portfolio for learning how investing works, using real market prices and pretend money.">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="data:,">
-    {# Loaded in the head, unminified and tiny, so the reveal class is set
-       before first paint. Without it nothing is hidden — the page just
-       renders finished. #}
-    <script src="{{ url_for('static', filename='reveal.js') }}"></script>
+    {# Small, unminified, and in the head so the reveal class is set before
+       first paint. It hides nothing unless it has confirmed it can finish. #}
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body data-motion="{{ motion | default('calm') }}">
 
-{# Scroll progress. Self-gating: with nothing to scroll the bar stays at
-   scaleX(0) and is invisible, so short pages never show it. #}
+<a class="skip-link" href="#main">Skip to main content</a>
+
+{# Self-gating: with nothing to scroll the bar stays at scaleX(0). #}
 <div class="scroll-progress" aria-hidden="true"></div>
 
 <header class="masthead">
     <div class="masthead-inner">
-        <a class="wordmark" href="{{ url_for('index') }}">
-            <span class="wordmark-mark" aria-hidden="true"></span>
-            Portfolio <em>Tracker</em>
-        </a>
+        <a class="wordmark" href="{{ url_for('index') }}">Portfolio Tracker</a>
 
         {% if current_user %}
-            <nav class="nav">
-                <a href="{{ url_for('index') }}"        {% if active == 'portfolio' %}class="is-active"{% endif %}>Portfolio</a>
-                <a href="{{ url_for('balance') }}"      {% if active == 'balance' %}class="is-active"{% endif %}>Balance</a>
-                <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active"{% endif %}>Buy</a>
-                <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active"{% endif %}>Sell</a>
-                <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active"{% endif %}>History</a>
-                <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active"{% endif %}>Update</a>
+            <nav class="nav" aria-label="Sections">
+                <a href="{{ url_for('index') }}"        {% if active == 'portfolio' %}class="is-active" aria-current="page"{% endif %}>Portfolio</a>
+                <a href="{{ url_for('balance') }}"      {% if active == 'balance' %}class="is-active" aria-current="page"{% endif %}>Balance</a>
+                <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active" aria-current="page"{% endif %}>Buy</a>
+                <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active" aria-current="page"{% endif %}>Sell</a>
+                <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active" aria-current="page"{% endif %}>History</a>
+                <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active" aria-current="page"{% endif %}>Update</a>
             </nav>
 
             <div class="account">
-                <a class="cash-chip" href="{{ url_for('balance') }}" title="Cash available to invest">
-                    <span class="cash-label">Cash</span>
+                <a class="cash-chip" href="{{ url_for('balance') }}">
+                    <span class="label">Cash</span>
                     <span class="cash-figure">{{ current_user.cash | money }}</span>
                 </a>
                 <span class="account-name">{{ current_user.display_name }}</span>
@@ -45,28 +43,49 @@
         {% else %}
             <div class="account">
                 <a class="signout" href="{{ url_for('login') }}">Log in</a>
-                <a class="btn btn-primary btn-sm" href="{{ url_for('signup') }}">Get started</a>
+                <a class="btn btn-primary btn-sm" href="{{ url_for('signup') }}">Open an account</a>
             </div>
         {% endif %}
     </div>
 </header>
 
-<main>
+<main id="main" tabindex="-1">
+    {# Announced to screen readers: successes politely, failures at once. #}
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <div class="flashes">
                 {% for category, message in messages %}
-                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                    <div class="flash flash-{{ category }} {% if category == 'success' %}self-dismiss{% endif %}"
+                         role="{{ 'alert' if category == 'error' else 'status' }}"
+                         aria-live="{{ 'assertive' if category == 'error' else 'polite' }}">{{ message }}</div>
                 {% endfor %}
             </div>
         {% endif %}
     {% endwith %}
 
+    {% if crumbs %}
+        <nav class="crumbs" aria-label="Breadcrumb">
+            <ol>
+                {% for crumb in crumbs %}
+                    <li>
+                        {% if crumb.url and not loop.last %}
+                            <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+                        {% else %}
+                            <span aria-current="page">{{ crumb.label }}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ol>
+        </nav>
+    {% endif %}
+
     {% block content %}{% endblock %}
 </main>
 
 <footer class="footer">
-    <p>Practice portfolio · live prices from Yahoo Finance · nothing here is financial advice</p>
+    <p>A practice portfolio · live prices from Yahoo Finance · nothing here is financial advice</p>
 </footer>
+
+{% block scripts %}{% endblock %}
 </body>
 </html>

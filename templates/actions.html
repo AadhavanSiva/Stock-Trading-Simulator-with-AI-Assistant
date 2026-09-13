@@ -1,69 +1,71 @@
 {% extends "base.html" %}
 {% set active = 'actions' %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Update data'}] %}
 {% block title %}Update data · Portfolio Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
-    <h1>Update your data</h1>
+    <p class="label">Fetching</p>
+    <h1>Update data</h1>
     <p class="lede">
         Prices are saved when you fetch them, not streamed continuously. Use
-        these when you want the latest numbers. Neither one buys or sells
-        anything.
+        these when you want today's numbers. Neither one buys or sells anything.
     </p>
 </div>
 
-<div class="card">
-    <div class="action-block">
-        <div class="action-copy">
-            <h3>Refresh today's prices</h3>
+<div class="panel">
+    <div class="job">
+        <div class="job-copy">
+            <h3>Today's prices</h3>
             <p>
-                Looks up the current market price for each investment you own
-                and updates your portfolio. Takes a second or two per holding.
+                Looks up the current market price for everything you own and
+                updates your portfolio. A second or two per holding.
             </p>
         </div>
-        <form method="post" action="{{ url_for('refresh_prices') }}">
+        <form method="post" action="{{ url_for('refresh_prices') }}"
+              data-busy-label="Fetching prices…">
             <button type="submit" class="btn btn-primary"
-                    {% if not holdings %}disabled{% endif %}>Refresh prices</button>
+                    {% if not holdings %}disabled{% endif %}>Fetch prices</button>
         </form>
     </div>
 
-    <div class="action-block">
-        <div class="action-copy">
-            <h3>Load past prices</h3>
+    <div class="job">
+        <div class="job-copy">
+            <h3>Past prices</h3>
             <p>
-                Downloads the last six months of daily prices for each holding,
-                which is what the
-                <a href="{{ url_for('history_view') }}">price history</a> page
-                uses. Safe to run more than once — days already stored are
+                Downloads six months of daily prices for each holding, which is
+                what the <a href="{{ url_for('history_view') }}">history</a> page
+                reads. Safe to run more than once — days already stored are
                 skipped rather than duplicated.
             </p>
         </div>
-        <form method="post" action="{{ url_for('load_history') }}">
+        <form method="post" action="{{ url_for('load_history') }}"
+              data-busy-label="Downloading…">
             <button type="submit" class="btn btn-secondary"
-                    {% if not holdings %}disabled{% endif %}>Load past prices</button>
+                    {% if not holdings %}disabled{% endif %}>Fetch past prices</button>
         </form>
     </div>
 
     {% if not holdings %}
-        <p class="faint" style="margin-top:1.75rem">
-            There's nothing to update until you own something.
-            <a href="{{ url_for('buy_start') }}">Buy your first stock</a> to get started.
+        <p class="faint" style="margin-top:var(--s5)">
+            There is nothing to update until you own something.
+            <a href="{{ url_for('buy_start') }}">Buy your first shares</a> to begin.
         </p>
     {% endif %}
 </div>
 
 {% if report %}
-    <div class="card">
-        <div class="card-head">
+    <div class="panel">
+        <div class="panel-head">
             <h2>{{ report_title }}</h2>
-            <p class="muted">What happened for each of your holdings.</p>
+            <p class="muted">What happened for each holding.</p>
         </div>
-        <ul class="outcome-list">
+        <ul class="outcomes stagger">
             {% for outcome in report.outcomes %}
                 <li>
-                    <span class="outcome-symbol">{{ outcome.symbol }}</span>
+                    <span class="outcome-sym">{{ outcome.symbol }}</span>
                     <span class="{{ 'outcome-ok' if outcome.ok else 'outcome-bad' }}">
-                        {% if not outcome.ok %}<strong>Failed —</strong> {% endif %}{{ outcome.message }}
+                        {%- if not outcome.ok %}<strong>Failed —</strong> {% endif %}{{ outcome.message }}
                     </span>
                 </li>
             {% endfor %}

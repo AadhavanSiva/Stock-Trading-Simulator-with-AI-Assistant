@@ -1,86 +1,94 @@
 {% extends "base.html" %}
 {% set active = 'history' %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'History'}] %}
 {% block title %}Price history · Portfolio Tracker{% endblock %}
 
 {% block content %}
 {% if not rows %}
-    <div class="card">
+    <div class="panel">
         <div class="empty">
-            <div class="empty-mark" aria-hidden="true">📈</div>
-            <h2>No price history yet</h2>
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>No history to show yet</h2>
             <p>
-                Once you own something, this page shows how its price has
-                moved over time — so you can see whether today's price is
-                unusually high, unusually low, or about normal.
+                Once you own something, this page shows how its price has moved
+                over time — so today's number has something to be measured
+                against.
             </p>
-            <div class="actions-row">
-                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first stock</a>
+            <div class="actions">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first shares</a>
             </div>
         </div>
     </div>
 {% else %}
     <div class="page-head">
+        <p class="label">The last {{ days }} days</p>
         <h1>Price history</h1>
         <p class="lede">
-            How the price of each of your investments has moved, so today's
-            number has something to be compared against.
+            Where today's price sits against the recent past. A price is only
+            high or low compared to something.
         </p>
     </div>
 
-    <div class="card">
+    <div class="panel">
         <div class="table-scroll">
-            <table>
+            <table data-sortable class="stack-on-mobile">
+                <caption class="visually-hidden">
+                    Recent price ranges for each holding.
+                </caption>
                 <thead>
                 <tr>
-                    <th scope="col">Investment</th>
-                    <th scope="col" class="align-right">Price today</th>
-                    <th scope="col" class="align-right">{{ days }}-day average</th>
-                    <th scope="col" class="align-right">Highest</th>
-                    <th scope="col" class="align-right">Lowest</th>
+                    <th scope="col" data-sort="text">Investment</th>
+                    <th scope="col" class="r" data-sort="number">Today</th>
+                    <th scope="col" class="r" data-sort="number">{{ days }}-day average</th>
+                    <th scope="col" class="r" data-sort="number">Highest</th>
+                    <th scope="col" class="r" data-sort="number">Lowest</th>
                 </tr>
                 </thead>
                 <tbody class="stagger">
                 {% for row in rows %}
                     <tr>
-                        <td>
+                        <td data-value="{{ row.symbol }}">
                             <span class="ticker">{{ row.symbol }}</span>
                             <span class="company">{{ row.company_name }}</span>
                         </td>
-                        <td class="align-right numeric">{{ row.current_price | money }}</td>
-                        <td class="align-right numeric">{{ row.average | money }}</td>
-                        <td class="align-right numeric">{{ row.high | money }}</td>
-                        <td class="align-right numeric">{{ row.low | money }}</td>
+                        <td class="r num" data-label="Today" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
+                        <td class="r num" data-label="{{ days }}-day average" data-value="{{ row.average or 0 }}">{{ row.average | money }}</td>
+                        <td class="r num" data-label="Highest" data-value="{{ row.high or 0 }}">{{ row.high | money }}</td>
+                        <td class="r num" data-label="Lowest" data-value="{{ row.low or 0 }}">{{ row.low | money }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
 
-        <p class="faint" style="margin-top:1.5rem">
-            A dash means we haven't downloaded that company's history yet.
-            <a href="{{ url_for('actions') }}">Load past prices</a> to fill it in.
+        <p class="faint" style="margin-top:var(--s5)">
+            A dash means that company's past prices have not been downloaded yet.
+            <a href="{{ url_for('actions') }}">Fetch past prices</a> to fill them in.
         </p>
     </div>
 
     <div class="glossary reveal">
-        <h3>What these words mean</h3>
+        <h3>In plain words</h3>
         <dl>
-            <dt>{{ days }}-day average</dt>
-            <dd>
-                The typical closing price over the last {{ days }} days. Comparing
-                today's price to this tells you whether the price is currently
-                running high or low against its recent norm.
-            </dd>
-
-            <dt>Highest and lowest</dt>
-            <dd>
-                The best and worst closing prices in the history we've stored.
-                They show how much this investment tends to swing — a wide gap
-                means a bumpier ride.
-            </dd>
-
-            <dt>Closing price</dt>
-            <dd>The price a stock finished at when the market closed for the day.</dd>
+            <div>
+                <dt>{{ days }}-day average</dt>
+                <dd>
+                    The typical closing price over the last {{ days }} days.
+                    Comparing today against it tells you whether the price is
+                    currently running high or low for this company.
+                </dd>
+            </div>
+            <div>
+                <dt>Highest and lowest</dt>
+                <dd>
+                    The best and worst closing prices on record here. A wide gap
+                    between them means a bumpier ride.
+                </dd>
+            </div>
+            <div>
+                <dt>Closing price</dt>
+                <dd>The price a share finished at when the market shut for the day.</dd>
+            </div>
         </dl>
     </div>
 {% endif %}

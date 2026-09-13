@@ -15,10 +15,20 @@ import web as web_module
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 CSS = open(os.path.join(ROOT, "static", "style.css"), encoding="utf-8").read()
-JS = open(os.path.join(ROOT, "static", "reveal.js"), encoding="utf-8").read()
+JS = open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8").read()
+HERO_JS = open(os.path.join(ROOT, "static", "hero.js"), encoding="utf-8").read()
 
 # The animation block, i.e. everything from the MOTION banner onwards.
 MOTION_CSS = CSS[CSS.index("MOTION"):]
+
+# A keyframe block: the outer braces plus the one level of nesting that
+# "from {...} to {...}" needs. Stopping at the first newline-brace instead
+# runs straight past a keyframe written on a single line.
+KEYFRAME_RE = r"@keyframes\s+[\w-]+\s*\{((?:[^{}]|\{[^{}]*\})*)\}"
+
+# The one external script the brief calls for: Three.js, pinned, landing
+# page only. Anything else loaded from off-site is a regression.
+ALLOWED_SCRIPT_HOST = "cdnjs.cloudflare.com/ajax/libs/three.js/r128/"
 
 
 def text(response):
@@ -37,9 +47,7 @@ class TestContentIsNeverGated:
         rule that hides an element before anything starts it moving.
         """
         # Keyframe bodies are a legitimate home for opacity: 0.
-        without_keyframes = re.sub(
-            r"@keyframes\s+[\w-]+\s*\{.+?\n\}", "", MOTION_CSS, flags=re.DOTALL
-        )
+        without_keyframes = re.sub(KEYFRAME_RE, "", MOTION_CSS, flags=re.DOTALL)
         for match in re.finditer(r"opacity:\s*0\s*;", without_keyframes):
             selector = without_keyframes[:match.start()].rsplit("{", 1)[0]
             selector = selector.rsplit("}", 1)[-1]
@@ -54,8 +62,8 @@ class TestContentIsNeverGated:
         """Server-rendered: the words are in the document, not painted in
         later by script."""
         body = text(anon.get("/"))
-        assert "Pick a company" in body
-        assert "Watch what happens" in body
+        assert "Find a company" in body
+        assert "Wait, and watch" in body
 
 
 class TestReducedMotion:
@@ -77,10 +85,21 @@ class TestReducedMotion:
     def test_the_animation_tiers_sit_behind_no_preference(self):
         assert "@media (prefers-reduced-motion: no-preference)" in MOTION_CSS
 
-    def test_javascript_bails_out_on_reduced_motion(self):
+    def test_enhancement_script_checks_reduced_motion_and_returns(self):
         assert "prefers-reduced-motion: reduce" in JS
-        reduce_check = JS.index("prefers-reduced-motion: reduce")
-        assert "return" in JS[reduce_check:reduce_check + 120]
+        # The reveal block must abandon its work rather than hide anything.
+        reveal = JS[JS.index("function reveal()"):]
+        assert "if (reduced) return;" in reveal[:300]
+
+    def test_the_webgl_scene_refuses_to_start_under_reduced_motion(self):
+        """The heaviest motion on the site must respect the setting first."""
+        assert 'mq("(prefers-reduced-motion: reduce)").matches' in HERO_JS
+        gate = HERO_JS.index("prefers-reduced-motion: reduce")
+        assert "return" in HERO_JS[gate:gate + 80]
+
+    def test_reduced_motion_also_hides_the_canvas_in_css(self):
+        block = MOTION_CSS[MOTION_CSS.index("@media (prefers-reduced-motion: reduce)"):]
+        assert "canvas { display: none; }" in block[:block.index("\n}\n")]
 
     def test_smooth_scrolling_is_also_disabled(self):
         assert "scroll-behavior: auto" in CSS
@@ -91,7 +110,7 @@ class TestOnlyCompositorProperties:
                          "margin", "padding")
 
     def test_keyframes_touch_only_transform_and_opacity(self):
-        for block in re.finditer(r"@keyframes\s+[\w-]+\s*\{(.+?)\n\}", CSS, re.DOTALL):
+        for block in re.finditer(KEYFRAME_RE, CSS, re.DOTALL):
             body = block.group(1)
             declared = set(re.findall(r"([a-z-]+)\s*:", body))
             assert declared <= {"opacity", "transform"}, (
@@ -121,10 +140,29 @@ class TestScrollDrivenTechnique:
         for library in ("gsap", "aos.js", "animate.css", "framer", "motion.min"):
             assert library not in body.lower()
 
-    def test_only_local_scripts_are_referenced(self, anon):
+    def test_only_the_pinned_three_js_comes_from_off_site(self, anon):
+        """One external dependency, pinned to an exact version, with SRI."""
         body = text(anon.get("/"))
-        assert "//cdn" not in body
-        assert "http://" not in body.replace('http://127.0.0.1', '')
+        external = re.findall(r'src="(https?://[^"]+)"', body)
+        assert len(external) == 1, external
+        assert ALLOWED_SCRIPT_HOST in external[0]
+        assert "integrity=" in body and "crossorigin=" in body
+
+    def test_three_js_is_pinned_to_an_exact_version(self, anon):
+        body = text(anon.get("/"))
+        assert re.search(r"three\.js/r\d+/", body), "version must be pinned"
+        assert "@latest" not in body
+
+    def test_three_js_loads_only_on_the_landing_page(self, client):
+        """Every other page stays flat CSS and stays fast."""
+        for path in ("/buy", "/sell", "/history", "/balance", "/actions"):
+            assert "three" not in text(client.get(path)).lower(), path
+
+    def test_the_hero_script_never_blocks_first_paint(self, anon):
+        body = text(anon.get("/"))
+        for tag in re.findall(r"<script[^>]*src=[^>]*>", body):
+            if "three" in tag or "hero" in tag:
+                assert "defer" in tag or "async" in tag, tag
 
     def test_javascript_uses_intersection_observer_not_scroll_events(self):
         assert "IntersectionObserver" in JS
