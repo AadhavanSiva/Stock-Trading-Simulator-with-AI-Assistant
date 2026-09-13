@@ -552,6 +552,73 @@ input.ticker-input {
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
+/* ============================================================= chart ==== */
+
+.ranges {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: var(--s5);
+}
+.range {
+    padding: var(--s2) var(--s4);
+    font-size: .78rem; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; text-decoration: none;
+    color: var(--ink-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.range:hover { color: var(--ink); }
+.range.is-active { color: var(--ink); border-bottom-color: var(--mark); }
+
+.chart-head {
+    display: flex; flex-wrap: wrap; gap: var(--s4);
+    justify-content: space-between; align-items: flex-end;
+    margin-bottom: var(--s4);
+}
+.chart-figure {
+    font-family: var(--display); font-size: 2rem;
+    font-variant-numeric: tabular-nums; margin: var(--s1) 0 0;
+}
+.chart-change { text-align: right; }
+
+.chart { margin: 0; }
+.chart svg {
+    display: block; width: 100%; height: 220px;
+    overflow: visible;
+}
+/* The line is ink regardless of direction — the figures above it carry the
+   up or down, so a fall is not painted as an alarm. */
+.chart-line {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.chart-area { fill: var(--paper-deep); opacity: .55; stroke: none; }
+.chart-baseline {
+    stroke: var(--rule-2);
+    stroke-width: 1;
+    stroke-dasharray: 2 4;
+}
+/* A single accent: the closing point of a range that moved. */
+.chart-gain .chart-line { stroke: var(--up); }
+.chart-loss .chart-line { stroke: var(--down); }
+.chart-gain .chart-area { fill: var(--up-wash); }
+.chart-loss .chart-area { fill: var(--down-wash); }
+
+.chart-scale {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: var(--s4); margin-top: var(--s3); padding-top: var(--s3);
+    border-top: 1px solid var(--rule);
+    font-size: .85rem; color: var(--ink-2);
+}
+
+.symbol-link { color: inherit; text-decoration: none; }
+.symbol-link:hover .ticker { text-decoration: underline; }
+.symbol-link:hover { color: var(--ink); }
+
 /* ============================================================================
    MOTION
    Additive only. Every element's default state is its FINAL state, so a

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% from "_delta.html" import delta %}
+{% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': symbol}] %}
+{% block title %}{{ symbol }} · {{ quote.company_name }} · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <p class="label">{{ symbol }}</p>
+    <h1>{{ quote.company_name }}</h1>
+    <p class="lede">
+        {{ quote.price | money }} per share right now.
+        {% if quote.owned is not none %}
+            You own {{ quote.owned | shares }}, bought at
+            {{ quote.average_cost | money }} on average.
+        {% else %}
+            You do not own any yet.
+        {% endif %}
+    </p>
+</div>
+
+<div class="panel">
+    {# Range switcher: plain links, so it works with JavaScript off. #}
+    <nav class="ranges" aria-label="Chart range">
+        {% for key, spec in ranges.items() %}
+            <a href="{{ url_for('stock_detail', symbol=symbol, range=key) }}"
+               class="range {% if key == window %}is-active{% endif %}"
+               {% if key == window %}aria-current="true"{% endif %}>{{ key | upper }}</a>
+        {% endfor %}
+    </nav>
+
+    {% if chart %}
+        {% set dir, arrow, word = movement(chart.change) %}
+        <div class="chart-head">
+            <div>
+                <p class="label">{{ range_label }}</p>
+                <p class="chart-figure num">{{ chart.last | money }}</p>
+            </div>
+            <div class="chart-change">
+                {{ delta(chart.change, chart.change_pct) }}
+                <p class="faint" style="margin:var(--s1) 0 0">
+                    over {{ range_label | lower }}
+                </p>
+            </div>
+        </div>
+
+        {# Drawn server-side. The figures below repeat everything the line
+           says, so the chart is an illustration rather than the only way
+           to read the data. #}
+        <figure class="chart chart-{{ dir }}">
+            <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}"
+                 preserveAspectRatio="none" role="img"
+                 aria-labelledby="chart-title chart-desc">
+                <title id="chart-title">{{ symbol }} closing price, {{ range_label | lower }}</title>
+                <desc id="chart-desc">
+                    From {{ chart.first | money }} to {{ chart.last | money }}:
+                    a change of {{ chart.change | signed_money }}, {{ word }} over the period.
+                    Low {{ chart.low | money }}, high {{ chart.high | money }},
+                    across {{ '{:,}'.format(chart.count) }} prices.
+                </desc>
+
+                <line class="chart-baseline" x1="0" y1="{{ chart.baseline_y }}"
+                      x2="{{ chart.width }}" y2="{{ chart.baseline_y }}"
+                      vector-effect="non-scaling-stroke"></line>
+                <path class="chart-area" d="{{ chart.area_path }}"></path>
+                <path class="chart-line" d="{{ chart.path }}"
+                      vector-effect="non-scaling-stroke"></path>
+            </svg>
+            <figcaption class="visually-hidden">
+                {{ symbol }} price over {{ range_label | lower }}.
+            </figcaption>
+        </figure>
+
+        <div class="chart-scale">
+            <span class="num">{{ chart.low | money }}</span>
+            <span class="faint">low · high</span>
+            <span class="num">{{ chart.high | money }}</span>
+        </div>
+
+        {% if needs_fetch %}
+            <p class="faint" style="margin-top:var(--s4)">
+                Only {{ chart.count }} data
+                {{ 'point' if chart.count == 1 else 'points' }} stored for this
+                range.
+            </p>
+        {% endif %}
+    {% else %}
+        <div class="empty">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>No prices stored for {{ range_label | lower }}</h2>
+            <p>
+                {% if intraday %}
+                    Intraday prices are fetched on demand and only go back about
+                    a week, so there is nothing here until you pull them.
+                {% else %}
+                    Daily prices for this company have not been downloaded yet.
+                {% endif %}
+            </p>
+            <form method="post"
+                  action="{{ url_for('stock_fetch', symbol=symbol) }}"
+                  data-busy-label="Fetching…">
+                <input type="hidden" name="range" value="{{ window }}">
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary">
+                        Fetch {{ range_label | lower }} of prices
+                    </button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
+
+    {% if chart and needs_fetch %}
+        <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
+              data-busy-label="Fetching…">
+            <input type="hidden" name="range" value="{{ window }}">
+            <div class="actions">
+                <button type="submit" class="btn btn-secondary btn-sm">Fetch more history</button>
+            </div>
+        </form>
+    {% endif %}
+</div>
+
+{% if stats.low is not none %}
+    <div class="panel">
+        <div class="panel-head">
+            <h2>Over {{ range_label | lower }}</h2>
+        </div>
+        <div class="figures">
+            <div>
+                <p class="label figure-label">Lowest</p>
+                <p class="figure-value num">{{ stats.low | money }}</p>
+            </div>
+            <div>
+                <p class="label figure-label">Average</p>
+                <p class="figure-value num">{{ stats.average | money }}</p>
+            </div>
+            <div>
+                <p class="label figure-label">Highest</p>
+                <p class="figure-value num">{{ stats.high | money }}</p>
+            </div>
+            <div>
+                <p class="label figure-label">Today</p>
+                <p class="figure-value num">{{ quote.price | money }}</p>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('buy_start', symbol=symbol) }}">Buy {{ symbol }}</a>
+    {% if quote.owned is not none %}
+        <a class="btn btn-secondary" href="{{ url_for('sell_quantity', symbol=symbol) }}">Sell {{ symbol }}</a>
+    {% endif %}
+    <a class="btn btn-quiet" href="{{ url_for('index') }}">Back to portfolio</a>
+</div>
+
+<div class="glossary reveal">
+    <h3>Reading this chart</h3>
+    <dl>
+        <div>
+            <dt>The line</dt>
+            <dd>
+                {% if intraday %}
+                    The price every few minutes while the market was open —
+                    how it moved during the session, not just where it finished.
+                {% else %}
+                    Closing price on each day in the range — where the price
+                    finished, not where it wandered during the day.
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt>The faint horizontal rule</dt>
+            <dd>
+                Where the price started this range. Above it is up over the
+                period; below it is down.
+            </dd>
+        </div>
+        <div>
+            <dt>A steep line is not a good line</dt>
+            <dd>
+                The chart is scaled to fit whatever range you picked, so a
+                gentle rise and a dramatic one can look identical. Read the
+                numbers, not the slope.
+            </dd>
+        </div>
+    </dl>
+</div>
+{% endblock %}

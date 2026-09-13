@@ -67,8 +67,11 @@
                 {% for row in summary.rows %}
                     <tr>
                         <td data-value="{{ row.symbol }}">
-                            <span class="ticker">{{ row.symbol }}</span>
-                            <span class="company">{{ row.company_name }}</span>
+                            <a class="symbol-link"
+                               href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                <span class="ticker">{{ row.symbol }}</span>
+                                <span class="company">{{ row.company_name }}</span>
+                            </a>
                         </td>
                         <td class="r num" data-label="Shares" data-value="{{ row.shares }}">{{ row.shares | shares }}</td>
                         <td class="r num" data-label="Spent" data-value="{{ row.cost }}">{{ row.cost | money }}</td>

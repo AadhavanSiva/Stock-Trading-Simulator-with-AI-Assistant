@@ -42,3 +42,13 @@ def get_company_name(symbol):
 
 def get_price_history(symbol, period="6mo"):
     return yf.Ticker(symbol).history(period=period)
+
+
+def get_intraday(symbol, period="1d", interval="5m"):
+    """Fetch intraday bars for the short-range charts.
+
+    Yahoo limits how far back each interval goes — roughly 7 days of
+    1-minute bars and 60 days of coarser ones — so callers ask for a
+    period the chosen interval can actually serve.
+    """
+    return yf.Ticker(symbol).history(period=period, interval=interval)

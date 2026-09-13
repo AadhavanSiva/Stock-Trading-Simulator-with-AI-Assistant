@@ -48,8 +48,11 @@
                 {% for row in rows %}
                     <tr>
                         <td data-value="{{ row.symbol }}">
-                            <span class="ticker">{{ row.symbol }}</span>
-                            <span class="company">{{ row.company_name }}</span>
+                            <a class="symbol-link"
+                               href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                <span class="ticker">{{ row.symbol }}</span>
+                                <span class="company">{{ row.company_name }}</span>
+                            </a>
                         </td>
                         <td class="r num" data-label="Today" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
                         <td class="r num" data-label="{{ days }}-day average" data-value="{{ row.average or 0 }}">{{ row.average | money }}</td>

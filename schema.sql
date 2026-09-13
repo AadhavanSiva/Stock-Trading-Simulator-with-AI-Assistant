@@ -60,3 +60,24 @@ CREATE TABLE IF NOT EXISTS price_history (
 
 CREATE INDEX IF NOT EXISTS price_history_symbol_date_idx
     ON price_history (symbol, date DESC);
+
+-- Intraday bars, for the 1-day and 5-day charts.
+--
+-- These cannot live in price_history: that table is keyed UNIQUE (symbol,
+-- date) on a DATE, so it holds exactly one row per trading day by design.
+-- Intraday needs a timestamp and many rows per day. It is also far more
+-- perishable — Yahoo only serves about 7 days of 1-minute bars and 60 days
+-- of coarser ones — so this table is a cache to be refilled, not a record
+-- to be kept.
+CREATE TABLE IF NOT EXISTS price_intraday (
+    id      SERIAL PRIMARY KEY,
+    symbol  TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
+    ts      TIMESTAMPTZ NOT NULL,
+    close   NUMERIC NOT NULL
+        CONSTRAINT price_intraday_close_sane
+        CHECK (close >= 0 AND close <> 'NaN'),
+    UNIQUE (symbol, ts)
+);
+
+CREATE INDEX IF NOT EXISTS price_intraday_symbol_ts_idx
+    ON price_intraday (symbol, ts DESC);

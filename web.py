@@ -8,6 +8,7 @@ call one of those, and render the result — the same way cli.py does.
 
 Run it with:  python -m flask --app web run
 """
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
 
@@ -16,9 +17,9 @@ from flask import (
     Flask, abort, flash, g, redirect, render_template, request, session, url_for,
 )
 
-from portfolio_tracker import config, operations
+from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, ValidationError
-from portfolio_tracker.models import history, portfolio, users
+from portfolio_tracker.models import history, portfolio, stocks, users
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
@@ -368,6 +369,96 @@ def buy_confirm():
         "success",
     )
     return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------- stock
+
+@app.route("/stock/<symbol>")
+@login_required
+def stock_detail(symbol):
+    """One company: its price now, a chart of the range you picked, and
+    your position in it if you have one."""
+    symbol = symbol.strip().upper()
+    window = charts.normalise_range(request.args.get("range"))
+    spec = charts.RANGES[window]
+
+    try:
+        quote = operations.look_up(g.user_id, symbol)
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("buy_start", symbol=symbol))
+
+    since = None
+    if spec["days"] is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=spec["days"])
+
+    if spec["intraday"]:
+        # Trading sessions, not wall-clock hours: see get_intraday_sessions.
+        series = [(ts, close) for ts, close in
+                  history.get_intraday_sessions(symbol, spec["days"])]
+        needs_fetch = len(series) < 2
+    else:
+        series = [(day, close) for day, close in
+                  history.get_series(symbol, since.date() if since else None)]
+        needs_fetch = len(series) < 2
+
+    chart = charts.build(series)
+
+    return render_template(
+        "stock.html",
+        motion="calm",
+        symbol=symbol,
+        quote=quote,
+        chart=chart,
+        window=window,
+        ranges=charts.RANGES,
+        range_label=spec["label"],
+        intraday=spec["intraday"],
+        needs_fetch=needs_fetch,
+        # Taken from the plotted window itself. These previously came from a
+        # separate query that, for 1D and 5D, ran over ALL stored history —
+        # labelling a 1980 split-adjusted $0.04 as the one-day low.
+        stats=({"low": chart.low, "high": chart.high, "average": chart.average}
+               if chart else {"low": None, "high": None, "average": None}),
+    )
+
+
+@app.route("/stock/<symbol>/fetch", methods=["POST"])
+@login_required
+def stock_fetch(symbol):
+    """Pull the data behind whichever chart is empty, then come back to it."""
+    symbol = symbol.strip().upper()
+    window = charts.normalise_range(request.form.get("range"))
+    spec = charts.RANGES[window]
+
+    # Price history rows reference stocks(symbol). A company you have only
+    # looked at — never bought — has no stocks row yet, so the insert would
+    # fail its foreign key. Register it from a live quote first.
+    try:
+        quote = operations.look_up(g.user_id, symbol)
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("stock_detail", symbol=symbol, range=window))
+    stocks.upsert_stock(quote.symbol, quote.company_name, quote.price)
+
+    try:
+        if spec["intraday"]:
+            # 1-minute bars only reach back about a week; 5 days needs a
+            # coarser interval to cover the span at all.
+            period, interval = ("1d", "5m") if window == "1d" else ("5d", "30m")
+            added = history.load_intraday_for_symbol(symbol, period, interval)
+            noun = "intraday points"
+        else:
+            # "max" backfills the long ranges; already-stored days are
+            # skipped, so this tops up rather than duplicating.
+            added = history.load_history_for_symbol(symbol, period="max")
+            noun = "days"
+    except Exception as exc:
+        flash(f"Could not fetch prices for {symbol}: {exc}", "error")
+        return redirect(url_for("stock_detail", symbol=symbol, range=window))
+
+    flash(f"Fetched {added} new {noun} for {symbol}.", "success")
+    return redirect(url_for("stock_detail", symbol=symbol, range=window))
 
 
 # --------------------------------------------------------------- lookup
