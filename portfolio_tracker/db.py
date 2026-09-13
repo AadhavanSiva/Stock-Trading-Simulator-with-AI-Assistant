@@ -1,5 +1,9 @@
+import contextlib
+
 import psycopg2
+
 from portfolio_tracker import config
+
 
 def get_connection():
     return psycopg2.connect(
@@ -10,3 +14,22 @@ def get_connection():
         port=config.DB_PORT
     )
 
+
+@contextlib.contextmanager
+def cursor(commit=False):
+    """Yield a cursor and always close the connection behind it.
+
+    Commits on a clean exit when commit=True; rolls back and re-raises
+    if the block fails, so a half-finished write is never left behind.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            yield cur
+            if commit:
+                conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
