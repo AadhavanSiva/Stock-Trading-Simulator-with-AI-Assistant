@@ -5,15 +5,16 @@
 <section class="hero">
     {# The stage carries a finished static background of its own. The canvas
        is layered on top only if the device can spare it, so the headline is
-       readable before — and without — any WebGL. #}
+       readable before, and without, any WebGL. #}
     <div class="hero-stage" data-hero-stage aria-hidden="true"></div>
 
     <div class="hero-inner">
         <p class="label label-mark">A practice portfolio</p>
-        <h1>Learn what investing<br>actually <span class="rule-under">feels like</span>.</h1>
+        <h1>Learn how investing works, <span class="rule-under">before it costs you</span>.</h1>
         <p class="lede">
-            Begin with ${{ '{:,.0f}'.format(starting_cash) }} of pretend money and
-            buy real companies at real prices. Nothing at stake but the lesson.
+            Start with ${{ '{:,.0f}'.format(starting_cash) }} of pretend money, buy
+            real companies at real prices, and research each one with an AI
+            assistant that shows its sources.
         </p>
         <div class="actions">
             <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Open an account</a>
@@ -22,14 +23,13 @@
     </div>
 </section>
 
-<section class="section">
-    <div class="section-head reveal">
-        <p class="label">01 — The idea</p>
-        <h2>Most people learn about investing by losing money slowly</h2>
-    </div>
-
-    <div class="reveal" style="max-width:56ch">
-        <p class="muted">
+<section class="section two-col">
+    <div class="reveal">
+        <div class="section-head">
+            <span class="label">Why practise</span>
+            <h2>Most people learn about investing by losing money slowly</h2>
+        </div>
+        <p class="muted" style="max-width:56ch">
             The habits are what cost you: buying something you don't understand,
             selling the moment it dips, checking the price six times before lunch.
             You can practise all of them here for nothing, and notice how each one
@@ -37,78 +37,91 @@
         </p>
     </div>
 
-    <div class="specimen reveal" style="margin-top:var(--s6)">
-        <span class="label">An account, a few weeks in</span>
+    <div class="specimen reveal">
+        <span class="label">Example account, a few weeks in</span>
         <div class="specimen-row"><span>Cash</span><span class="num">$46,677.30</span></div>
         <div class="specimen-row"><span>Investments</span><span class="num">$3,621.15</span></div>
-        <div class="specimen-row" style="border-top:2px solid var(--ink);padding-top:var(--s3)">
-            <strong>Total</strong>
+        <div class="specimen-row specimen-total">
+            <strong>Account value</strong>
             <span class="delta delta-gain">
-                <strong class="delta-fig num">$50,298.45</strong>
-                <span class="delta-arrow" aria-hidden="true">↑</span>
-                <span class="delta-tag">Up</span>
+                <strong class="num">$50,298.45</strong>
+                <span class="delta-arrow" aria-hidden="true">▲</span>
+                <span class="delta-tag">up</span>
             </span>
         </div>
-        <p class="faint" style="margin:var(--s3) 0 0">An illustration, not a promise.</p>
+        <p class="faint" style="margin:var(--s3) 0 0">Illustrative figures, not a promise.</p>
     </div>
 </section>
 
 <section class="section">
     <div class="section-head reveal">
-        <p class="label">02 — How it works</p>
+        <span class="label">How it works</span>
         <h2>Three steps, no jargon</h2>
     </div>
 
     <div class="steps stagger">
         <div class="step">
-            <p class="step-n">Step one</p>
+            <p class="step-n">Step 1</p>
             <h3>Find a company</h3>
             <p>
-                Type a ticker — AAPL for Apple, MSFT for Microsoft. The name and
-                today's price appear as you type, so a typo is obvious immediately.
+                Type a ticker, like AAPL for Apple or MSFT for Microsoft. The name
+                and today's price appear as you type, so a typo is obvious at once.
             </p>
         </div>
         <div class="step">
-            <p class="step-n">Step two</p>
+            <p class="step-n">Step 2</p>
             <h3>Decide an amount</h3>
             <p>
-                Buy a whole share or part of one. You always see the total cost and
-                what your cash will be afterwards, before anything is confirmed.
+                Buy a whole share or part of one. You see the total cost and what
+                your cash will be afterwards before anything is confirmed.
             </p>
         </div>
         <div class="step">
-            <p class="step-n">Step three</p>
+            <p class="step-n">Step 3</p>
             <h3>Wait, and watch</h3>
             <p>
-                Prices move. Your ledger shows what you paid, what it's worth now,
-                and the difference — stated plainly, in either direction.
+                Prices move. Your portfolio shows what you paid, what it's worth
+                now, and the difference, stated plainly in either direction.
             </p>
         </div>
     </div>
 </section>
 
-<section class="section">
-    <div class="section-head reveal">
-        <p class="label">03 — What you get</p>
-        <h2>A quiet place to be wrong</h2>
-    </div>
-    <div class="reveal" style="max-width:52ch">
+<section class="section two-col">
+    <div class="reveal">
+        <div class="section-head">
+            <span class="label">Research with Ask</span>
+            <h2>Understand what moved a price, with the sources to check</h2>
+        </div>
         <ul class="checks">
-            <li><span class="tick" aria-hidden="true">—</span> Real market prices, so the lesson is real</li>
-            <li><span class="tick" aria-hidden="true">—</span> Every term explained where it appears</li>
+            <li><span class="tick" aria-hidden="true">—</span> Explains past moves and company news; never predicts or tells you what to buy</li>
+            <li><span class="tick" aria-hidden="true">—</span> Lists the searches it ran and links every source</li>
+            <li><span class="tick" aria-hidden="true">—</span> Says plainly when it couldn't research something</li>
             <li><span class="tick" aria-hidden="true">—</span> Gains and losses reported the same way, without fanfare</li>
-            <li><span class="tick" aria-hidden="true">—</span> No cost, no card, no real money anywhere</li>
         </ul>
         <div class="actions">
             <a class="btn btn-primary" href="{{ url_for('signup') }}">Start with ${{ '{:,.0f}'.format(starting_cash) }}</a>
         </div>
+    </div>
+    <div class="specimen reveal" aria-label="Example of an Ask answer">
+        <span class="label">Example answer</span>
+        <p style="font-weight:600;margin-bottom:var(--s2)">What moved Apple's price this year?</p>
+        <p class="muted" style="font-size:.9375rem">
+            Most of the climb came in two stretches. Coverage links the second
+            to the company's July quarterly report…
+        </p>
+        <div class="provenance">
+            <div class="provenance-head"><span class="answer-badge is-researched">Researched</span><span>4 sources</span></div>
+            <p class="searches">Searched Google for <q>Apple quarterly results July</q></p>
+        </div>
+        <p class="faint" style="margin:var(--s3) 0 0">Illustration of the format.</p>
     </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
 {# Three.js, pinned, and only on this page. `defer` keeps it off the
-   critical path — the hero is readable long before this arrives, and the
+   critical path: the hero is readable long before this arrives, and the
    scene declines to start on low-power devices or under reduced motion. #}
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
         integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ=="

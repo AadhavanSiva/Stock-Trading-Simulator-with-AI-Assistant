@@ -5,16 +5,20 @@
 
 {% block content %}
 {% if not summary.rows %}
+    <div class="page-head">
+        <span class="label">Your account</span>
+        <h1>Portfolio</h1>
+    </div>
     <div class="panel">
         <div class="empty">
             <div class="empty-rule" aria-hidden="true"></div>
             <h2>Nothing bought yet</h2>
             <p>
-                This is your ledger. Once you own something it will be listed here
-                with what you paid, what it's worth today, and the difference.
+                Once you own something it will be listed here with what you paid,
+                what it's worth today, and the difference.
             </p>
             <p>
-                You have <strong>{{ summary.cash | money }}</strong> in cash waiting.
+                You have <strong class="num">{{ summary.cash | money }}</strong> in cash.
                 A reasonable first move is one company whose product you already use.
             </p>
             <div class="actions">
@@ -23,90 +27,121 @@
         </div>
     </div>
 {% else %}
-    <div class="page-head">
-        <p class="label">Your holdings</p>
-        <h1>Portfolio</h1>
-        <p class="lede">Everything you own, and how it has done since you bought it.</p>
+    <div class="page-head page-head-row">
+        <div>
+            <span class="label">Your account</span>
+            <h1>Portfolio</h1>
+        </div>
+        <div class="actions" style="margin-top:0">
+            <a class="btn btn-quiet btn-sm" href="{{ url_for('actions') }}">Refresh prices</a>
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('sell_start') }}">Sell</a>
+            <a class="btn btn-primary btn-sm" href="{{ url_for('buy_start') }}">Buy</a>
+        </div>
     </div>
 
-    <div class="panel">
-        <div class="table-scroll">
-            <table data-sortable class="stack-on-mobile">
-                <caption class="visually-hidden">
-                    Your holdings. Column headings sort the table when activated.
-                </caption>
-                <thead>
-                <tr>
-                    <th scope="col" data-sort="text">Investment</th>
-                    <th scope="col" class="r" data-sort="number">Shares</th>
-                    <th scope="col" class="r" data-sort="number">Paid</th>
-                    <th scope="col" class="r" data-sort="number">Today</th>
-                    <th scope="col" class="r" data-sort="number">Worth</th>
-                    <th scope="col" class="r" data-sort="number">Difference</th>
-                </tr>
-                </thead>
-                <tbody class="stagger">
-                {% for row in summary.rows %}
-                    <tr {% if row.symbol == just_changed %}class="just-changed"{% endif %}>
-                        <td data-value="{{ row.symbol }}">
-                            <a class="symbol-link"
-                               href="{{ url_for('stock_detail', symbol=row.symbol) }}">
-                                <span class="ticker">{{ row.symbol }}</span>
-                                <span class="company">{{ row.company_name }}</span>
-                            </a>
-                        </td>
-                        <td class="r num" data-label="Shares" data-value="{{ row.shares }}">{{ row.shares | shares }}</td>
-                        <td class="r num" data-label="Paid" data-value="{{ row.purchase_price }}">{{ row.purchase_price | money }}</td>
-                        <td class="r num" data-label="Today" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
-                        <td class="r num" data-label="Worth" data-value="{{ row.value or 0 }}">{{ row.value | money }}</td>
-                        <td class="r" data-label="Difference" data-value="{{ row.gain_loss or 0 }}">
-                            {{ delta(row.gain_loss, row.percent) }}
-                        </td>
+    <section class="kpis" aria-label="Account summary">
+        <div class="kpi">
+            <p class="kpi-label">Account value</p>
+            <p class="kpi-value">{{ summary.net_worth | money }}</p>
+            <p class="kpi-foot">Cash plus investments</p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Investments</p>
+            <p class="kpi-value">{{ summary.holdings_value | money }}</p>
+            <p class="kpi-foot num">{{ summary.total_cost | money }} paid</p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Total gain or loss</p>
+            <p class="kpi-value">{{ delta(summary.total_gain) }}</p>
+            <p class="kpi-foot num">{{ summary.total_percent | percent }} on what you paid</p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Cash available</p>
+            <p class="kpi-value">{{ summary.cash | money }}</p>
+            <p class="kpi-foot">Buying power</p>
+        </div>
+    </section>
+
+    <div class="grid-main">
+        <div class="panel panel-flush">
+            <div class="panel-head">
+                <h2>Holdings</h2>
+                <p class="faint">{{ summary.rows | length }} {{ 'company' if summary.rows | length == 1 else 'companies' }}</p>
+            </div>
+            <div class="table-scroll" style="margin-top:var(--s3)">
+                <table data-sortable class="stack-on-mobile">
+                    <caption class="visually-hidden">
+                        Your holdings. Column headings sort the table when activated.
+                    </caption>
+                    <thead>
+                    <tr>
+                        <th scope="col" data-sort="text">Holding</th>
+                        <th scope="col" class="r" data-sort="number">Shares</th>
+                        <th scope="col" class="r" data-sort="number">Avg. paid</th>
+                        <th scope="col" class="r" data-sort="number">Price</th>
+                        <th scope="col" class="r" data-sort="number">Value</th>
+                        <th scope="col" class="r" data-sort="number">Gain or loss</th>
                     </tr>
+                    </thead>
+                    <tbody class="stagger">
+                    {% for row in summary.rows %}
+                        <tr class="row-link{% if row.symbol == just_changed %} just-changed{% endif %}"
+                            data-href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                            <td data-value="{{ row.symbol }}">
+                                <a class="symbol-link"
+                                   href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                    <span class="ticker">{{ row.symbol }}</span>
+                                    <span class="company">{{ row.company_name }}</span>
+                                </a>
+                            </td>
+                            <td class="r num" data-label="Shares" data-value="{{ row.shares }}">{{ row.shares | shares }}</td>
+                            <td class="r num" data-label="Avg. paid" data-value="{{ row.purchase_price }}">{{ row.purchase_price | money }}</td>
+                            <td class="r num" data-label="Price" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
+                            <td class="r num" data-label="Value" data-value="{{ row.value or 0 }}">{{ row.value | money }}</td>
+                            <td class="r" data-label="Gain or loss" data-value="{{ row.gain_loss or 0 }}">
+                                {{ delta(row.gain_loss, row.percent) }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if summary.unpriced %}
+                <p class="faint" style="margin:0;padding:var(--s3) var(--s5);border-top:1px solid var(--border-divider)">
+                    {{ summary.unpriced | join(', ') }}
+                    {{ 'has' if summary.unpriced | length == 1 else 'have' }} no price yet,
+                    so {{ 'it is' if summary.unpriced | length == 1 else 'they are' }} left
+                    out of these totals.
+                    <a href="{{ url_for('actions') }}">Fetch today's prices</a> to include
+                    {{ 'it' if summary.unpriced | length == 1 else 'them' }}.
+                </p>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Allocation</h2>
+                <p class="faint">Share of account value</p>
+            </div>
+            {% set total = summary.net_worth %}
+            <ul class="allocation">
+                {% for row in summary.rows | selectattr('value') | sort(attribute='value', reverse=true) %}
+                    {% set pct = (row.value / total * 100) if total else 0 %}
+                    <li>
+                        <span class="alloc-name">{{ row.symbol }}</span>
+                        <span class="alloc-pct">{{ '%.1f' | format(pct | float) }}%</span>
+                        <span class="alloc-bar" aria-hidden="true"><span style="width:{{ '%.2f' | format(pct | float) }}%"></span></span>
+                    </li>
                 {% endfor %}
-                </tbody>
-            </table>
+                {% set cash_pct = (summary.cash / total * 100) if total else 0 %}
+                <li>
+                    <span class="alloc-name">Cash</span>
+                    <span class="alloc-pct">{{ '%.1f' | format(cash_pct | float) }}%</span>
+                    <span class="alloc-bar is-cash" aria-hidden="true"><span style="width:{{ '%.2f' | format(cash_pct | float) }}%"></span></span>
+                </li>
+            </ul>
         </div>
-
-        <div class="figures">
-            <div>
-                <p class="label figure-label">Spent</p>
-                <p class="figure-value num">{{ summary.total_cost | money }}</p>
-            </div>
-            <div>
-                <p class="label figure-label">Worth today</p>
-                <p class="figure-value num">{{ summary.holdings_value | money }}</p>
-            </div>
-            <div>
-                <p class="label figure-label">Cash</p>
-                <p class="figure-value num">{{ summary.cash | money }}</p>
-            </div>
-            <div>
-                <p class="label figure-label">Account total</p>
-                <p class="figure-value num">{{ summary.net_worth | money }}</p>
-            </div>
-            <div>
-                <p class="label figure-label">Difference</p>
-                <p class="figure-value">{{ delta(summary.total_gain, summary.total_percent) }}</p>
-            </div>
-        </div>
-
-        {% if summary.unpriced %}
-            <p class="faint" style="margin-top:var(--s5)">
-                {{ summary.unpriced | join(', ') }}
-                {{ 'has' if summary.unpriced | length == 1 else 'have' }} no price yet,
-                so {{ 'it is' if summary.unpriced | length == 1 else 'they are' }} left
-                out of these totals.
-                <a href="{{ url_for('actions') }}">Fetch today's prices</a> to include
-                {{ 'it' if summary.unpriced | length == 1 else 'them' }}.
-            </p>
-        {% endif %}
-    </div>
-
-    <div class="actions">
-        <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy</a>
-        <a class="btn btn-secondary" href="{{ url_for('sell_start') }}">Sell</a>
-        <a class="btn btn-quiet" href="{{ url_for('actions') }}">Fetch today's prices</a>
     </div>
 
     <div class="glossary reveal">
@@ -117,11 +152,11 @@
                 <dd>Units of a company you own. You can own a fraction of one.</dd>
             </div>
             <div>
-                <dt>Paid</dt>
+                <dt>Avg. paid</dt>
                 <dd>Your average cost per share. Buying the same company twice blends the two prices together.</dd>
             </div>
             <div>
-                <dt>Difference</dt>
+                <dt>Gain or loss</dt>
                 <dd>What it's worth now against what you paid. It only becomes real money once you sell.</dd>
             </div>
         </dl>

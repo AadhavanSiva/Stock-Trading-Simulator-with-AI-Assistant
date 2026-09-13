@@ -263,11 +263,19 @@ class TestDirectionWithoutColour:
         assert "▼" in body
         assert ">down<" in body
 
-    def test_the_figure_itself_is_not_colour_coded(self):
-        """Direction lives in the tag, not the number, so the number stays
-        legible in greyscale."""
-        block = CSS[CSS.index(".delta-fig"):]
-        assert "color: var(--ink)" in block[:120]
+    def test_gain_and_loss_colours_are_tokens_not_the_only_signal(self):
+        """The figure may be tinted, but only with the AA-checked gain and
+        loss tokens, and the arrow and word are always rendered beside it."""
+        assert ".delta-gain .delta-fig" in CSS and "var(--color-gain)" in CSS
+        assert ".delta-loss .delta-fig" in CSS and "var(--color-loss)" in CSS
+        macro = open(os.path.join(ROOT, "templates", "_delta.html"), encoding="utf-8").read()
+        assert 'class="delta-arrow"' in macro and 'class="delta-tag">{{ word }}' in macro
+
+    def test_buttons_are_never_gain_or_loss_coloured(self):
+        """A green Buy or red Sell would read as a result, not an action."""
+        for match in re.finditer(r"\.btn[\w-]*\s*(?::hover)?\s*\{([^}]*)\}", strip_comments(CSS)):
+            assert "--color-gain" not in match.group(1)
+            assert "--color-loss" not in match.group(1)
 
 
 class TestNoCelebration:

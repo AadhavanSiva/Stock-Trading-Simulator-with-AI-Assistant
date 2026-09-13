@@ -81,6 +81,7 @@ def inject_user():
             "cash": cash,
         },
         "assistant_enabled": config.ASSISTANT_ENABLED,
+        "assistant_research": assistant.research_available(),
     }
 
 
@@ -462,6 +463,7 @@ def stock_detail(symbol):
         symbol=symbol,
         quote=quote,
         chart=chart,
+        readouts=charts.readouts(chart),
         window=window,
         ranges=charts.RANGES,
         range_label=spec["label"],
@@ -526,25 +528,32 @@ _asked = defaultdict(deque)
 _asked_lock = threading.Lock()
 
 
-def _within_assistant_limit(user_id):
+def _seconds_until_allowed(user_id):
+    """Record a question and return 0, or return how long until one is allowed."""
     now = time.monotonic()
     with _asked_lock:
         recent = _asked[user_id]
         while recent and now - recent[0] > ASSISTANT_WINDOW:
             recent.popleft()
         if len(recent) >= ASSISTANT_LIMIT:
-            return False
+            return max(1, int(ASSISTANT_WINDOW - (now - recent[0])) + 1)
         recent.append(now)
-        return True
+        return 0
+
+
+def _within_assistant_limit(user_id):
+    return _seconds_until_allowed(user_id) == 0
 
 
 def _answer_question(question, symbol, earlier=()):
     """Shared by the drawer and the no-JavaScript page."""
-    if not _within_assistant_limit(g.user_id):
+    wait = _seconds_until_allowed(g.user_id)
+    if wait:
         return assistant.Answer(
             False, "", "busy",
-            f"That's {ASSISTANT_LIMIT} questions in {ASSISTANT_WINDOW // 60} minutes. "
-            "Take a short break and ask again shortly.",
+            f"You've asked {ASSISTANT_LIMIT} questions in {ASSISTANT_WINDOW // 60} minutes. "
+            "Ask again shortly.",
+            retry_after=wait,
         )
     # Built on the server from this app's records. Nothing numeric from the
     # browser reaches the model; the page only says which ticker it shows.
@@ -592,7 +601,14 @@ def api_assistant():
         # suggestions to be shown, unmodified, with any searched answer.
         "search_suggestions": answer.suggestions_html,
         "notice": answer.notice,
-    }, status
+        # The Google searches the model ran, so the reader can see what was
+        # looked up rather than take "researched" on trust.
+        "searches": list(answer.searches),
+        "retry_after": answer.retry_after,
+        # Whether the next question will be offered search, so the panel
+        # only says "searching the web" when it will.
+        "research": assistant.research_available(),
+    }, status, ({"Retry-After": str(answer.retry_after)} if answer.retry_after else {})
 
 
 @app.route("/assistant", methods=["GET", "POST"])

@@ -3,8 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <title>{% block title %}Portfolio Tracker{% endblock %}</title>
     <meta name="description" content="A practice portfolio for learning how investing works, using real market prices and pretend money.">
+    <link rel="preload" href="{{ url_for('static', filename='fonts/IBMPlexSans-Variable.woff2') }}" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="data:,">
     {# Small, unminified, and in the head so the reveal class is set before
@@ -20,7 +22,13 @@
 
 <header class="masthead">
     <div class="masthead-inner">
-        <a class="wordmark" href="{{ url_for('index') }}">Portfolio Tracker</a>
+        <a class="wordmark" href="{{ url_for('index') }}">
+            <svg class="wordmark-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="1" y="1" width="22" height="22" rx="5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5.5 16.5 10 12l3 2.5 5.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Portfolio Tracker
+        </a>
 
         {% if current_user %}
             <nav class="nav" aria-label="Sections">
@@ -41,7 +49,7 @@
                 <a class="signout" href="{{ url_for('logout') }}">Sign out</a>
             </div>
         {% else %}
-            <div class="account">
+            <div class="account" style="margin-left:auto">
                 <a class="signout" href="{{ url_for('login') }}">Log in</a>
                 <a class="btn btn-primary btn-sm" href="{{ url_for('signup') }}">Open an account</a>
             </div>
@@ -57,7 +65,7 @@
                 {% for category, message in messages %}
                     <div class="flash flash-{{ category }} {% if category == 'success' %}self-dismiss{% endif %}"
                          role="{{ 'alert' if category == 'error' else 'status' }}"
-                         aria-live="{{ 'assertive' if category == 'error' else 'polite' }}">{{ message }}</div>
+                         aria-live="{{ 'assertive' if category == 'error' else 'polite' }}"><span>{{ message }}</span></div>
                 {% endfor %}
             </div>
         {% endif %}
@@ -83,42 +91,63 @@
 </main>
 
 {% if current_user and assistant_enabled %}
-    {# A real link first: without JavaScript it opens the full assistant page.
-       app.js turns it into a drawer toggle. #}
+    {# A real link first: without JavaScript it opens the full Ask page.
+       app.js turns it into a panel toggle. #}
     <a class="assistant-toggle" data-assistant-toggle
        href="{{ url_for('assistant_page', symbol=assistant_symbol or None) }}"
        aria-controls="assistant" aria-expanded="false">
-        <span class="assistant-toggle-mark" aria-hidden="true"></span>Ask{% if assistant_symbol %} about {{ assistant_symbol }}{% endif %}
+        <svg class="ask-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8.5 3.5a5 5 0 1 0 3.1 8.93l3.73 3.72 1.06-1.06-3.72-3.73A5 5 0 0 0 8.5 3.5Z" stroke="currentColor" stroke-width="1.6"/></svg>
+        Ask{% if assistant_symbol %} about {{ assistant_symbol }}{% endif %}
     </a>
 
     <aside class="assistant" id="assistant" data-assistant hidden
            data-symbol="{{ assistant_symbol or '' }}"
+           data-research="{{ 'on' if assistant_research else 'off' }}"
            aria-labelledby="assistant-title">
-        <div class="assistant-head">
+        <div class="ask-head">
             <div>
-                <p class="label">Assistant</p>
-                <h2 id="assistant-title">Ask{% if assistant_symbol %} about {{ assistant_symbol }}{% endif %}</h2>
+                <h2 class="ask-title" id="assistant-title">
+                    <svg class="ask-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8.5 3.5a5 5 0 1 0 3.1 8.93l3.73 3.72 1.06-1.06-3.72-3.73A5 5 0 0 0 8.5 3.5Z" stroke="currentColor" stroke-width="1.6"/></svg>
+                    Ask
+                </h2>
+                <p class="ask-sub">AI research assistant · Google Gemini</p>
             </div>
             <button type="button" class="assistant-close" data-assistant-close
-                    aria-label="Close the assistant">Close</button>
+                    aria-label="Close Ask">Close</button>
         </div>
 
-        <p class="assistant-note">
-            Researches companies on the web and explains what the numbers show.
-            It won't tell you what to buy or sell, and it can be wrong — check
-            its sources. Questions go to Google's Gemini; on a free API key
-            Google may use them and people may read them, so leave out anything
-            personal.
-        </p>
+        <div class="ask-context">
+            <div class="ask-context-row">
+                <span>Looking at</span>
+                {% if assistant_symbol %}
+                    <span class="ask-pill">{{ assistant_symbol }}</span>
+                {% else %}
+                    <span>your portfolio</span>
+                {% endif %}
+                <span class="ask-research" data-research-label>
+                    {{ 'Web research on' if assistant_research else 'Web research off' }}
+                </span>
+            </div>
+            <details class="ask-scope">
+                <summary>What Ask can see</summary>
+                {% include "_ask_scope.html" %}
+            </details>
+        </div>
 
         <div class="assistant-log" data-assistant-log role="log"
-             aria-live="polite" aria-relevant="additions"></div>
+             aria-live="polite" aria-relevant="additions" aria-labelledby="assistant-title">
+            <p class="ask-intro" data-assistant-intro>
+                Ask what moved a price, what a company does, or what a term means.
+                Ask explains and researches. It won't tell you what to buy or sell.
+            </p>
+        </div>
 
-        <div class="assistant-starters" data-assistant-starters>
+        <div class="ask-starters" data-assistant-starters>
+            <p class="label">Try asking</p>
             {% if assistant_symbol %}
-                <button type="button" data-starter>What does this company actually do?</button>
-                <button type="button" data-starter>What's happened with this company recently?</button>
-                <button type="button" data-starter>How much has the price swung?</button>
+                <button type="button" data-starter>What has moved this stock's price over the past year?</button>
+                <button type="button" data-starter>What does this company do, and how does it make money?</button>
+                <button type="button" data-starter>How much has the price swung compared with what I paid?</button>
             {% else %}
                 <button type="button" data-starter>How spread out is my portfolio?</button>
                 <button type="button" data-starter>What does average cost mean?</button>
@@ -129,16 +158,27 @@
         <form class="assistant-form" data-assistant-form method="post"
               action="{{ url_for('assistant_page') }}">
             <input type="hidden" name="symbol" value="{{ assistant_symbol or '' }}">
-            <label class="visually-hidden" for="assistant-question">Your question</label>
+            <label for="assistant-question">Your question</label>
             <textarea id="assistant-question" name="question" rows="2" maxlength="1000"
-                      placeholder="Ask a question…" required></textarea>
-            <button type="submit" class="btn btn-primary btn-sm">Ask</button>
+                      aria-describedby="assistant-keys"
+                      placeholder="{{ 'Ask about ' ~ assistant_symbol ~ '…' if assistant_symbol else 'Ask about your portfolio…' }}" required></textarea>
+            <div class="composer-row">
+                <span id="assistant-keys">Enter to send · Shift+Enter for a new line
+                    <span class="composer-count" data-composer-count hidden></span></span>
+                <button type="submit" class="btn btn-primary btn-sm">Ask</button>
+            </div>
+            <p class="assistant-note">
+                Answers are AI-generated and can be wrong; check the sources.
+                Not financial advice. Questions go to Google's Gemini, and on a
+                free API key Google may use them and people may read them, so
+                leave out anything personal.
+            </p>
         </form>
     </aside>
 {% endif %}
 
 <footer class="footer">
-    <p>A practice portfolio · live prices from Yahoo Finance · nothing here is financial advice</p>
+    <p>A practice portfolio with pretend money · prices from Yahoo Finance · nothing here is financial advice</p>
 </footer>
 
 {% block scripts %}{% endblock %}

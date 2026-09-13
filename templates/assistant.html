@@ -1,69 +1,77 @@
 {% extends "base.html" %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}] + ([{'label': symbol, 'url': url_for('stock_detail', symbol=symbol)}] if symbol else []) + [{'label': 'Ask'}] %}
 {% set assistant_symbol = symbol %}
-{% from "_grounding.html" import grounding %}
+{% from "_grounding.html" import grounding, notice %}
 {% block title %}Ask{% if symbol %} about {{ symbol }}{% endif %} · Portfolio Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
-    <p class="label">Assistant</p>
+    <span class="label">AI research assistant · Google Gemini</span>
     <h1>Ask{% if symbol %} about {{ symbol }}{% endif %}</h1>
     <p class="lede">
-        Ask what something means, what the numbers show, or what's been
-        happening with a company. It researches and explains; it won't tell
-        you what to buy or sell.
+        Ask what moved a price, what a company does, or what a term means.
+        Ask researches and explains; it won't tell you what to buy or sell.
     </p>
 </div>
 
-<div class="panel">
-    {% if answer and answer.ok %}
-        <div class="assistant-answer" role="status" aria-live="polite">
-            <p class="label">You asked</p>
-            <p class="assistant-q">{{ question }}</p>
-            <p class="label">Answer</p>
-            {% for paragraph in answer.text.split('\n\n') %}
-                <p>{{ paragraph }}</p>
-            {% endfor %}
-            {{ grounding(answer) }}
-        </div>
-    {% elif answer %}
-        <div class="inline-error" role="alert">
-            <strong>No answer this time</strong>
-            {{ answer.message }}
-        </div>
-    {% endif %}
+<div class="grid-main">
+    <div class="panel">
+        {% if answer and answer.ok %}
+            <div class="assistant-answer" role="status" aria-live="polite">
+                <p class="label">You asked</p>
+                <p class="assistant-q">{{ question }}</p>
+                <p class="label">Answer</p>
+                {{ notice(answer) }}
+                {% for paragraph in answer.text.split('\n\n') %}
+                    <p>{{ paragraph }}</p>
+                {% endfor %}
+                {{ grounding(answer) }}
+                <p class="answer-foot">AI-generated · can be wrong · not financial advice</p>
+            </div>
+        {% elif answer %}
+            <div class="inline-error" role="alert">
+                <div>
+                    <strong>Ask couldn't answer that</strong>
+                    {{ answer.message }}
+                </div>
+            </div>
+        {% endif %}
 
-    <form method="post" action="{{ url_for('assistant_page') }}">
-        <input type="hidden" name="symbol" value="{{ symbol }}">
-        <div class="field" style="max-width:none">
-            <label for="assistant-page-question">Your question</label>
-            <p class="hint" id="assistant-page-hint">
+        <form method="post" action="{{ url_for('assistant_page') }}"
+              {% if answer %}style="margin-top:var(--s5)"{% endif %}>
+            <input type="hidden" name="symbol" value="{{ symbol }}">
+            <div class="field" style="max-width:none">
+                <label for="assistant-page-question">Your question</label>
+                <p class="hint" id="assistant-page-hint">
+                    {% if symbol %}
+                        For example: "What has moved {{ symbol }}'s price over the past year?"
+                    {% else %}
+                        For example: "How spread out is my portfolio?"
+                    {% endif %}
+                    Answers usually take 10 to 20 seconds.
+                </p>
+                <textarea id="assistant-page-question" name="question" rows="4"
+                          maxlength="{{ max_chars }}" required
+                          aria-describedby="assistant-page-hint">{{ '' if answer and answer.ok else question }}</textarea>
+            </div>
+            <div class="actions" style="margin-top:0">
+                <button type="submit" class="btn btn-primary">Ask</button>
                 {% if symbol %}
-                    It can see {{ symbol }}'s price, stored history and your
-                    position, and can search the web for news and earnings. For
-                    example: "What has happened with this company recently?"
-                {% else %}
-                    It can see your cash and holdings. For example: "How spread out
-                    is my portfolio?"
+                    <a class="btn btn-quiet" href="{{ url_for('stock_detail', symbol=symbol) }}">Back to {{ symbol }}</a>
                 {% endif %}
-            </p>
-            <textarea id="assistant-page-question" name="question" rows="4"
-                      maxlength="{{ max_chars }}" required
-                      aria-describedby="assistant-page-hint">{{ '' if answer and answer.ok else question }}</textarea>
-        </div>
-        <div class="actions">
-            <button type="submit" class="btn btn-primary">Ask</button>
-            {% if symbol %}
-                <a class="btn btn-quiet" href="{{ url_for('stock_detail', symbol=symbol) }}">Back to {{ symbol }}</a>
-            {% endif %}
-        </div>
-    </form>
-</div>
+            </div>
+        </form>
+    </div>
 
-<p class="faint" style="margin-top:var(--s4)">
-    Answers are generated by Google's Gemini from this app's data and can be
-    wrong. Nothing here is financial advice. On a free Gemini API key, Google
-    may use your questions to improve its products and people may read them,
-    so leave out anything personal.
-</p>
+    <div class="panel">
+        <div class="panel-head"><h2>What Ask can see</h2></div>
+        {% include "_ask_scope.html" %}
+        <p class="faint" style="margin:var(--s3) 0 0">
+            Answers are generated by Google's Gemini and can be wrong. Nothing
+            here is financial advice. On a free Gemini API key, Google may use
+            your questions to improve its products and people may read them,
+            so leave out anything personal.
+        </p>
+    </div>
+</div>
 {% endblock %}

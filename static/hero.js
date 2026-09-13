@@ -1,7 +1,7 @@
 /* Landing hero — an ambient point field, drifting.
  *
- * The idea behind the visual: a ledger page seen edge-on. Points sit on
- * faint ruled lines and breathe with a slow travelling wave, so it reads
+ * The idea behind the visual: a sheet of figures seen edge-on. Points sit
+ * on faint ruled lines and breathe with a slow travelling wave, so it reads
  * as something patient and periodic rather than a market ticker. All
  * geometry is generated here; there is no imported artwork or texture.
  *
@@ -48,7 +48,15 @@
     if (!hasWebGL) return;
 
     // ---- scene ----------------------------------------------------------
-    var INK = 0x16130f, MARK = 0xbf431d;
+    // Colours come from the stylesheet, so the scene follows light and dark
+    // themes: navy points, a few gold marks, fading into the page ground.
+    var styles = window.getComputedStyle(stage);
+    function token(name, fallback) {
+        return (styles.getPropertyValue(name) || "").trim() || fallback;
+    }
+    var INK = token("--hero-dot", "#1E3A8A");
+    var MARK = token("--hero-mark", "#A16207");
+    var GROUND = token("--color-bg", "#F8FAFC");
     var COLS = 96, ROWS = 34, SPREAD_X = 34, SPREAD_Y = 12;
 
     var renderer, scene, camera, points, rows, frame = null, running = false;
@@ -75,7 +83,7 @@
     var colors = new Float32Array(count * 3);
     var seeds = new Float32Array(count);
 
-    var inkC = new THREE.Color(INK), markC = new THREE.Color(MARK);
+    var inkC = new THREE.Color(INK), markC = new THREE.Color(MARK), groundC = new THREE.Color(GROUND);
     var i = 0;
     for (var r = 0; r < ROWS; r++) {
         for (var c = 0; c < COLS; c++) {
@@ -86,15 +94,15 @@
             positions[i * 3 + 2] = z;
             seeds[i] = Math.random() * Math.PI * 2;
 
-            // A sparse scatter of red marks, like corrections in a margin.
+            // A sparse scatter of gold marks among the navy.
             var isMark = Math.random() < 0.014;
             var col = isMark ? markC : inkC;
             // Depth fade baked into vertex colour: cheaper than a shader,
             // and keeps the far edge from crowding the headline.
             var fade = 0.22 + 0.78 * (1 - Math.abs(z) / (SPREAD_Y * 1.2));
-            colors[i * 3] = col.r * fade + (1 - fade) * 0.96;
-            colors[i * 3 + 1] = col.g * fade + (1 - fade) * 0.94;
-            colors[i * 3 + 2] = col.b * fade + (1 - fade) * 0.90;
+            colors[i * 3] = col.r * fade + (1 - fade) * groundC.r;
+            colors[i * 3 + 1] = col.g * fade + (1 - fade) * groundC.g;
+            colors[i * 3 + 2] = col.b * fade + (1 - fade) * groundC.b;
             i++;
         }
     }

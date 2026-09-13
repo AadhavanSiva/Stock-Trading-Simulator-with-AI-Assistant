@@ -1,22 +1,21 @@
 {# A change in value, stated the same way everywhere.
 
-   The figure itself stays ink-coloured. Direction is carried by an arrow
-   and a word, with a tinted tag as the third signal — so it reads
-   correctly in greyscale, to a screen reader, and to anyone who cannot
-   separate red from green.
+   Sign, arrow and word always travel together, so direction reads in
+   greyscale, to a screen reader, and to anyone who cannot separate red
+   from green. Colour is added on top at AA contrast, never instead.
 
    Up and down get identical structure and identical weight. Nothing here
    congratulates a gain or scolds a loss. #}
 
-{% macro delta(amount, percent=None) -%}
+{% macro delta(amount, percent=None, size='') -%}
     {%- if amount is none -%}
         <span class="delta delta-none"><span class="delta-tag">No price yet</span></span>
     {%- else -%}
         {%- set dir, arrow, word = movement(amount) -%}
-        <span class="delta delta-{{ dir }}">
+        <span class="delta delta-{{ dir }}{% if size %} delta-{{ size }}{% endif %}">
+            <span class="delta-arrow" aria-hidden="true">{{ arrow }}</span>
             <span class="delta-fig num">{{ amount | signed_money }}</span>
             {%- if percent is not none %} <span class="delta-pct num">{{ percent | percent }}</span>{% endif %}
-            <span class="delta-arrow" aria-hidden="true">{{ arrow }}</span>
             <span class="delta-tag">{{ word }}</span>
         </span>
     {%- endif -%}

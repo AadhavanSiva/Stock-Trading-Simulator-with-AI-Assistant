@@ -71,30 +71,36 @@ one bending to suit the other.
 
 ## Design
 
-The front end follows one idea: **investing is patient bookkeeping, not a
-trading floor.** So the interface is built like a ruled ledger — warm paper,
-hairline rules, figures in tabular numerals aligned right, column heads in
-small wide-tracked capitals, and a single vermilion mark used the way a
-bookkeeper's red pen is used: rarely, and to point at one thing.
+The front end aims for the calm of a full-service broker rather than the
+urgency of a trading app: **numbers lead, and chrome recedes.** White panels
+on a cool grey ground, hairline dividers, one navy accent, and IBM Plex Sans
+with tabular numerals so figures never shift as they change. The fonts are
+served from `static/fonts/` (SIL Open Font License), not a font CDN.
 
-Gains and losses get identical treatment. The figure itself stays ink-coloured;
-direction is carried by an arrow and a word, with a tinted tag as a third
-signal. That reads correctly in greyscale, to a screen reader, and to anyone
-who cannot separate red from green — and it means a gain is never celebrated
-over a loss. There is no confetti anywhere, deliberately: this app teaches
-beginners, and buying should not feel like winning.
+- **Colour has jobs.** Navy is for links, focus and the chart line. Gold is
+  reserved for Ask, the research assistant, so it is recognisable anywhere.
+  Green and red belong to data only: Buy is ink and Sell is outlined, never
+  coloured like a result.
+- **Direction is never colour alone.** Every change carries a sign, an arrow
+  and a word, at the same weight for gains and losses, so it reads in
+  greyscale and to a screen reader. There is no confetti anywhere: buying
+  should not feel like winning.
+- **Contrast is measured, not eyeballed.** Every text colour meets WCAG AA on
+  the surface it sits on. Dividers are decorative; inputs and outlined buttons
+  use a separate, darker border that meets the 3:1 minimum.
+- **Light and dark themes** follow the operating system setting.
 
-The landing page carries one WebGL scene — a drifting point field on faint
-ruled lines, all geometry generated in `static/hero.js`, no textures or
-imported models. It sits behind a finished static background and declines to
-run at all on low-core or low-memory devices, on small touch screens, under
-Save-Data, without WebGL, or under reduced motion. It stops rendering when the
-tab is hidden or the hero scrolls out of view. Three.js is pinned to r128 with
-a subresource-integrity hash and loads on that page only; every other page is
-flat CSS.
+The dashboard leads with four figures (account value, investments, total gain
+or loss, cash), then holdings beside an allocation list. There is no "today's
+change" figure yet: the app does not store a previous close.
 
-Landing page weight: 5.7 KB of HTML, 48 KB of local CSS and JS, plus a deferred
-603 KB Three.js (~150 KB gzipped) — 0.63 MB against a 1 MB budget.
+The landing page carries one WebGL scene, a drifting point field whose colours
+come from the stylesheet, with all geometry generated in `static/hero.js`. It
+sits behind a finished static background and declines to run at all on
+low-core or low-memory devices, on small touch screens, under Save-Data,
+without WebGL, or under reduced motion. It stops rendering when the tab is
+hidden or the hero scrolls out of view. Three.js is pinned to r128 with a
+subresource-integrity hash and loads on that page only.
 
 ## Stock pages and charts
 
@@ -103,6 +109,10 @@ price chart over 1D, 5D, 1M, 3M, 6M, 1Y or all time. Charts are inline SVG
 drawn on the server — no charting library, and they work with JavaScript off.
 Each chart carries a text description, and the figures beside it repeat what
 the line shows.
+
+With JavaScript on, a crosshair and tooltip give the exact date and price under
+the pointer, the arrow keys step through the same readout once the chart is
+focused, and "View as table" lists the plotted prices.
 
 Daily ranges read `price_history`. 1D and 5D need intraday bars, which that
 table cannot hold (it is one row per day by design), so they use
@@ -130,6 +140,12 @@ API.
 - **It explains and does not advise.** It will not tell you to buy, sell or
   hold, predict prices, or call something a good investment. Analyst views,
   if it mentions them, are framed as opinions that often disagree.
+- **It shows its work.** Each answer is marked Researched or Not researched,
+  lists the Google searches it ran and its sources, and the panel's "What Ask
+  can see" list names exactly what is sent. While waiting, the panel says what
+  is happening by elapsed time (searching only when search is available) and
+  offers Cancel after 45 seconds. Each failure (rate limit, not set up,
+  refused, network) gets its own message and a way forward.
 
 ### Setting it up
 

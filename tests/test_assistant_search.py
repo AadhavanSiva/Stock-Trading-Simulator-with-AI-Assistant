@@ -214,7 +214,7 @@ class TestDrawerScript:
     def test_restored_answers_keep_their_suggestions(self):
         """Suggestions must accompany a searched answer every time it is shown."""
         assert "suggestions: data.search_suggestions" in self.JS
-        assert "grounding(reply, turn.sources, turn.suggestions, turn.notice)" in self.JS
+        assert "grounding(reply, turn.sources, turn.suggestions, turn.searches)" in self.JS
 
     def test_sources_and_html_are_not_resent_to_the_model(self):
         block = self.JS[self.JS.index("earlier: transcript.slice(-3)"):]
@@ -339,7 +339,7 @@ class TestSearchUnavailableFallback:
 
     def test_the_drawer_shows_and_keeps_the_notice(self):
         js = TestDrawerScript.JS
-        assert "note.textContent = notice" in js
+        assert "document.createTextNode(notice)" in js   # text, never HTML
         assert 'notice: data.notice || ""' in js
 
 
@@ -364,3 +364,53 @@ class TestClientRetries:
     def test_quota_refusals_are_not_retried(self, monkeypatch):
         """A refused search must fall back straight away, not wait it out."""
         assert 429 not in self.built_options(monkeypatch).http_status_codes
+
+
+class TestSearchQueries:
+    """The searches the model ran are shown, so "researched" can be checked."""
+
+    def reply_with_queries(self, queries):
+        response = grounded_reply()
+        response.candidates[0].grounding_metadata.web_search_queries = queries
+        return response
+
+    def test_queries_come_back_with_the_answer(self):
+        with using(FakeClient(self.reply_with_queries(["apple earnings july", "AAPL price 2026"]))):
+            answer = assistant.ask("ctx", "q")
+        assert answer.searches == ("apple earnings july", "AAPL price 2026")
+
+    def test_queries_are_deduplicated_trimmed_and_capped(self):
+        queries = ["  a  ", "a", ""] + [f"q{i}" for i in range(10)]
+        with using(FakeClient(self.reply_with_queries(queries))):
+            answer = assistant.ask("ctx", "q")
+        assert answer.searches[0] == "a" and len(answer.searches) == 5
+
+    def test_api_returns_the_queries_and_research_flag(self, client):
+        with using(FakeClient(self.reply_with_queries(["apple news"]))), quote():
+            data = client.post("/api/assistant", json={"question": "q", "symbol": "AAPL"}).get_json()
+        assert data["searches"] == ["apple news"]
+        assert data["research"] is True
+
+    def test_research_flag_turns_off_after_search_is_refused(self, client):
+        with using(SequenceClient(quota_error(), plain_reply())), quote():
+            data = client.post("/api/assistant", json={"question": "q"}).get_json()
+        assert data["research"] is False
+        assert 'data-research="off"' in client.get("/buy").get_data(as_text=True)
+
+    def test_the_page_shows_the_queries_without_javascript(self, client):
+        with using(FakeClient(self.reply_with_queries(["apple <b>news</b>"]))), quote():
+            body = client.post("/assistant", data={"question": "q", "symbol": "AAPL"}).get_data(as_text=True)
+        assert "Searched Google for" in body
+        assert "<q>apple &lt;b&gt;news&lt;/b&gt;</q>" in body
+
+
+class TestRateLimitWait:
+    def test_busy_answer_says_how_long_to_wait(self, client, monkeypatch):
+        monkeypatch.setattr(web_module, "ASSISTANT_LIMIT", 1)
+        with using(FakeClient(plain_reply())), quote():
+            client.post("/api/assistant", json={"question": "q"})
+            response = client.post("/api/assistant", json={"question": "q"})
+        data = response.get_json()
+        assert response.status_code == 429 and data["kind"] == "busy"
+        assert 0 < data["retry_after"] <= web_module.ASSISTANT_WINDOW + 1
+        assert response.headers["Retry-After"] == str(data["retry_after"])

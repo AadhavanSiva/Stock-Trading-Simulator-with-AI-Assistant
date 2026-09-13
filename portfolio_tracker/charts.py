@@ -130,6 +130,53 @@ def date_label(moment, window):
     return f"{moment:%b} {moment.day}"
 
 
+def point_label(moment):
+    """The full date (and, for intraday prices, time) of a single point.
+
+    Axis labels are abbreviated to fit; a tooltip or a table row names the
+    exact moment instead: "Sep 12, 2026" or "Fri Sep 12, 10:35am ET".
+    """
+    if not isinstance(moment, date):
+        return str(moment)
+    if isinstance(moment, datetime):
+        if moment.tzinfo is not None:
+            moment = moment.astimezone(EXCHANGE_TZ)
+        hour = moment.hour % 12 or 12
+        suffix = "am" if moment.hour < 12 else "pm"
+        return f"{moment:%a} {moment:%b} {moment.day}, {hour}:{moment.minute:02d}{suffix} ET"
+    return f"{moment:%b} {moment.day}, {moment:%Y}"
+
+
+MAX_READOUTS = 360
+
+
+def readouts(chart, limit=MAX_READOUTS):
+    """Plotted points as [x%, y%, when, price] for the hover readout and table.
+
+    Percentages rather than viewBox units, because the plot stretches to its
+    container. Compact arrays, and at most `limit` of them: a pointer cannot
+    pick between more positions than that on a page-width chart, and the
+    all-time page has a size budget. The last point, the current price, is
+    always kept.
+    """
+    if chart is None:
+        return []
+    points = chart.points
+    if len(points) > limit:
+        stride = len(points) / (limit - 1)
+        picked = [points[int(i * stride)] for i in range(limit - 1)]
+        points = picked + [points[-1]]
+    return [
+        [
+            round(point["x"] / chart.width * 100, 2),
+            round(point["y"] / chart.height * 100, 2),
+            point_label(point["label"]),
+            f"${Decimal(point['value']):,.2f}",
+        ]
+        for point in points
+    ]
+
+
 # ----------------------------------------------------------------------- build
 
 def _reduce(series, limit):

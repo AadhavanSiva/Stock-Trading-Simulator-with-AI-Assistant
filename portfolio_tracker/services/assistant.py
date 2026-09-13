@@ -26,10 +26,12 @@ log = logging.getLogger(__name__)
 # Search. When they are present, Google's terms require the suggestions to
 # be shown alongside the answer, unmodified. `notice` tells the reader when
 # research was wanted but not available, so an unresearched answer is never
-# mistaken for a researched one.
+# mistaken for a researched one. `searches` are the Google queries the model
+# actually ran, shown so a reader can see what was looked up. `retry_after`
+# is the number of seconds to wait, when a "busy" answer knows it.
 Answer = namedtuple(
-    "Answer", "ok text kind message sources suggestions_html notice",
-    defaults=((), "", ""),
+    "Answer", "ok text kind message sources suggestions_html notice searches retry_after",
+    defaults=((), "", "", (), None),
 )
 Source = namedtuple("Source", "title uri domain")
 
@@ -37,6 +39,7 @@ MAX_QUESTION_CHARS = 1000
 MAX_EARLIER_TURNS = 3
 _MAX_EARLIER_CHARS = 1500
 _MAX_SOURCES = 8
+_MAX_SEARCHES = 5
 
 # Thinking tokens count toward the output limit on Gemini, so this leaves
 # room to reason and search and still finish a short answer.
@@ -171,6 +174,16 @@ def _search_available():
     return config.ASSISTANT_SEARCH and time.monotonic() >= _search_blocked_until
 
 
+def research_available():
+    """Whether the next question will be offered Google Search.
+
+    Lets the page describe the wait honestly: "searching the web" only when
+    a search can actually happen. A free key is not known to lack search
+    until its first refusal, so this can be optimistic once.
+    """
+    return bool(config.ASSISTANT_ENABLED and _search_available())
+
+
 def _block_search():
     global _search_blocked_until
     _search_blocked_until = time.monotonic() + _SEARCH_COOLDOWN_SECONDS
@@ -223,7 +236,7 @@ def _grounding(candidate):
     """
     metadata = getattr(candidate, "grounding_metadata", None)
     if metadata is None:
-        return (), ""
+        return (), "", ()
 
     sources, seen = [], set()
     for chunk in getattr(metadata, "grounding_chunks", None) or []:
@@ -239,7 +252,15 @@ def _grounding(candidate):
 
     entry = getattr(metadata, "search_entry_point", None)
     suggestions = (getattr(entry, "rendered_content", None) or "").strip()
-    return tuple(sources), suggestions
+
+    searches = []
+    for query in getattr(metadata, "web_search_queries", None) or []:
+        query = str(query or "").strip()
+        if query and query not in searches:
+            searches.append(query[:200])
+        if len(searches) >= _MAX_SEARCHES:
+            break
+    return tuple(sources), suggestions, tuple(searches)
 
 
 def ask(context, question, earlier=()):
@@ -307,8 +328,8 @@ def ask(context, question, earlier=()):
             )
         return Answer(False, "", "failed", "The assistant didn't produce an answer. Try asking again.")
 
-    sources, suggestions = _grounding(candidate)
-    return Answer(True, text, "answered", "", sources, suggestions, notice)
+    sources, suggestions, searches = _grounding(candidate)
+    return Answer(True, text, "answered", "", sources, suggestions, notice, searches)
 
 
 def _call(client, context, question, earlier, search):

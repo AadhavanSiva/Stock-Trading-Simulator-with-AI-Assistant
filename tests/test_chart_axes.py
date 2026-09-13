@@ -249,3 +249,28 @@ class TestAllTimeIsHonest:
         with quote():
             body = text(client.get("/stock/AAPL?range=all"))
         assert "<h2>Since " in body
+
+
+class TestReadouts:
+    """Hover, keyboard and table readouts: exact dates and prices per point."""
+
+    def test_daily_points_read_as_full_dates_and_dollars(self):
+        series = [(date(2026, 1, 2), Decimal("100")), (date(2026, 1, 5), Decimal("1234.5"))]
+        points = charts.readouts(charts.build(series))
+        assert points[0][2] == "Jan 2, 2026" and points[1][3] == "$1,234.50"
+        assert points[0][0] == 0 and points[-1][0] == 100
+
+    def test_intraday_points_are_labelled_in_eastern_time(self):
+        from datetime import datetime, timezone
+        moment = datetime(2026, 9, 11, 14, 35, tzinfo=timezone.utc)   # 10:35 ET
+        assert charts.point_label(moment) == "Fri Sep 11, 10:35am ET"
+
+    def test_long_series_are_capped_and_keep_the_latest_price(self):
+        series = [(date(2000, 1, 1) + timedelta(days=i), Decimal(100 + i % 7)) for i in range(5000)]
+        chart = charts.build(series)
+        points = charts.readouts(chart)
+        assert len(points) <= charts.MAX_READOUTS
+        assert points[-1][1] == round(chart.points[-1]["y"] / chart.height * 100, 2)
+
+    def test_no_chart_means_no_readouts(self):
+        assert charts.readouts(None) == []

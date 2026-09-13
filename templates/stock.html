@@ -5,33 +5,50 @@
 {% block title %}{{ symbol }} · {{ quote.company_name }} · Portfolio Tracker{% endblock %}
 
 {% block content %}
-<div class="page-head">
-    <p class="label">{{ symbol }}</p>
-    <h1>{{ quote.company_name }}</h1>
-    <p class="lede">
-        {{ quote.price | money }} per share right now.
-        {% if quote.owned is not none %}
-            You own {{ quote.owned | shares }}, bought at
-            {{ quote.average_cost | money }} on average.
-        {% else %}
-            You do not own any yet.
-        {% endif %}
-    </p>
+<div class="stock-head">
+    <div>
+        <span class="stock-sym">{{ symbol }}</span>
+        <h1>{{ quote.company_name }}</h1>
+        <p class="stock-price">
+            <span class="stock-price-fig num">{{ quote.price | money }}</span>
+            <span class="faint">per share, latest price</span>
+        </p>
+        <p class="lede">
+            {% if quote.owned is not none %}
+                You own {{ quote.owned | shares }}, bought at
+                {{ quote.average_cost | money }} on average.
+            {% else %}
+                You do not own any yet.
+            {% endif %}
+        </p>
+    </div>
+    {% if assistant_enabled %}
+        <a class="btn btn-ask" data-assistant-open
+           href="{{ url_for('assistant_page', symbol=symbol) }}">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8.5 3.5a5 5 0 1 0 3.1 8.93l3.73 3.72 1.06-1.06-3.72-3.73A5 5 0 0 0 8.5 3.5Z" stroke="currentColor" stroke-width="1.6"/></svg>
+            Ask about {{ symbol }}
+        </a>
+    {% endif %}
 </div>
 
 {# What the chart actually covers. When only part of the range is stored,
    say so everywhere a label would otherwise claim the whole range. #}
 {% set coverage = ('since ' ~ (stored_since | long_date)) if partial else (range_label | lower) %}
 
+<div class="grid-main">
+<div>
 <div class="panel">
     {# Range switcher: plain links, so it works with JavaScript off. #}
-    <nav class="ranges" aria-label="Chart range">
-        {% for key, spec in ranges.items() %}
-            <a href="{{ url_for('stock_detail', symbol=symbol, range=key) }}"
-               class="range {% if key == window %}is-active{% endif %}"
-               {% if key == window %}aria-current="true"{% endif %}>{{ key | upper }}</a>
-        {% endfor %}
-    </nav>
+    <div class="panel-head">
+        <h2>Price</h2>
+        <nav class="ranges" aria-label="Chart range">
+            {% for key, spec in ranges.items() %}
+                <a href="{{ url_for('stock_detail', symbol=symbol, range=key) }}"
+                   class="range {% if key == window %}is-active{% endif %}"
+                   {% if key == window %}aria-current="true"{% endif %}>{{ key | upper }}</a>
+            {% endfor %}
+        </nav>
+    </div>
 
     {% if chart %}
         {% if partial %}
@@ -74,7 +91,7 @@
            distort any text inside it, so axis labels are HTML positioned by
            percentage beside the plot. They are hidden from screen readers:
            the SVG description below already states the same facts. #}
-        <figure class="chart chart-{{ dir }}">
+        <figure class="chart" data-chart>
             <div class="chart-frame">
                 <p class="axis-title axis-title-y" aria-hidden="true">Price (USD)</p>
 
@@ -84,7 +101,7 @@
                     {% endfor %}
                 </div>
 
-                <div class="chart-plot">
+                <div class="chart-plot" data-chart-plot>
                     <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}"
                          preserveAspectRatio="none" role="img"
                          aria-labelledby="chart-title chart-desc">
@@ -108,6 +125,12 @@
                         <path class="chart-line" d="{{ chart.path }}"
                               vector-effect="non-scaling-stroke"></path>
                     </svg>
+                    {% if readouts %}
+                        {# The current price, emphasised. A dot, not an SVG circle,
+                           so the stretched plot cannot squash it. #}
+                        <span class="chart-end" aria-hidden="true"
+                              style="left: {{ readouts[-1][0] }}%; top: {{ readouts[-1][1] }}%"></span>
+                    {% endif %}
                 </div>
 
                 <div class="chart-x" aria-hidden="true">
@@ -123,6 +146,14 @@
             <figcaption class="visually-hidden">
                 {{ symbol }} price over {{ coverage }}.
             </figcaption>
+            {# Hover and keyboard readout data: [x%, y%, when, price]. #}
+            <script type="application/json" data-chart-points>{{ readouts | tojson }}</script>
+            <div class="chart-tools" data-chart-tools hidden>
+                <span>Hover the chart, or focus it and use the arrow keys, to read prices.</span>
+                <button type="button" class="btn btn-quiet btn-sm" data-chart-table-toggle
+                        aria-expanded="false" aria-controls="chart-table">View as table</button>
+            </div>
+            <div class="chart-table" id="chart-table" data-chart-table hidden></div>
         </figure>
 
         {% if needs_fetch and not partial %}
@@ -184,19 +215,59 @@
                 <p class="figure-value num">{{ stats.high | money }}</p>
             </div>
             <div>
-                <p class="label figure-label">Today</p>
+                <p class="label figure-label">Latest</p>
                 <p class="figure-value num">{{ quote.price | money }}</p>
             </div>
         </div>
     </div>
 {% endif %}
+</div>
 
-<div class="actions">
-    <a class="btn btn-primary" href="{{ url_for('buy_start', symbol=symbol) }}">Buy {{ symbol }}</a>
-    {% if quote.owned is not none %}
-        <a class="btn btn-secondary" href="{{ url_for('sell_quantity', symbol=symbol) }}">Sell {{ symbol }}</a>
+<div>
+    <div class="panel position-panel">
+        <div class="panel-head"><h2>Your position</h2></div>
+        {% if quote.owned is not none %}
+            {% set value = quote.owned * quote.price %}
+            {% set paid = quote.owned * quote.average_cost %}
+            <dl class="ledger">
+                <div class="ledger-row"><dt>Shares</dt><dd>{{ quote.owned | shares }}</dd></div>
+                <div class="ledger-row"><dt>Average paid</dt><dd>{{ quote.average_cost | money }}</dd></div>
+                <div class="ledger-row"><dt>Paid in total</dt><dd>{{ paid | money }}</dd></div>
+                <div class="ledger-row"><dt>Worth now</dt><dd>{{ value | money }}</dd></div>
+                <div class="ledger-row ledger-total"><dt>Gain or loss</dt><dd>{{ delta(value - paid) }}</dd></div>
+            </dl>
+        {% else %}
+            <dl class="ledger">
+                <div class="ledger-row"><dt>Shares</dt><dd>None</dd></div>
+                <div class="ledger-row"><dt>Cash available</dt><dd>{{ quote.cash | money }}</dd></div>
+                <div class="ledger-row"><dt>Your cash would buy</dt><dd>up to {{ quote.affordable | shares }}</dd></div>
+            </dl>
+        {% endif %}
+        <div class="actions">
+            <a class="btn btn-primary" href="{{ url_for('buy_start', symbol=symbol) }}">Buy {{ symbol }}</a>
+            {% if quote.owned is not none %}
+                <a class="btn btn-secondary" href="{{ url_for('sell_quantity', symbol=symbol) }}">Sell {{ symbol }}</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if assistant_enabled %}
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Research {{ symbol }}</h2>
+            </div>
+            <p class="faint" style="margin-top:0">Ask looks into what moved the price and explains it. It doesn't predict or advise.</p>
+            {# Real forms: without JavaScript each opens the Ask page with the
+               question answered. app.js sends them to the panel instead. #}
+            <form method="post" action="{{ url_for('assistant_page') }}" class="starter-list" data-ask-starters>
+                <input type="hidden" name="symbol" value="{{ symbol }}">
+                <button type="submit" name="question" value="What has moved {{ symbol }}'s price over the past year?">What has moved {{ symbol }}'s price over the past year?</button>
+                <button type="submit" name="question" value="What does {{ quote.company_name }} do, and how does it make money?">What does {{ quote.company_name }} do, and how does it make money?</button>
+                <button type="submit" name="question" value="What are the main risks people discuss for {{ symbol }}?">What are the main risks people discuss for {{ symbol }}?</button>
+            </form>
+        </div>
     {% endif %}
-    <a class="btn btn-quiet" href="{{ url_for('index') }}">Back to portfolio</a>
+</div>
 </div>
 
 <div class="glossary reveal">
@@ -206,10 +277,10 @@
             <dt>The line</dt>
             <dd>
                 {% if intraday %}
-                    The price every few minutes while the market was open —
+                    The price every few minutes while the market was open:
                     how it moved during the session, not just where it finished.
                 {% else %}
-                    Closing price on each day in the range — where the price
+                    Closing price on each day in the range: where the price
                     finished, not where it wandered during the day.
                 {% endif %}
             </dd>

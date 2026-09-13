@@ -1,0 +1,27 @@
+{# What goes to Gemini with each question. Keep in step with
+   operations.assistant_context(): this is a promise to the reader. #}
+<div class="ask-scope-body">
+    <h3>From your account</h3>
+    <ul>
+        <li>Today's date</li>
+        <li>Your cash, investments and account total</li>
+        <li>Each holding: shares, average price paid, current value</li>
+        {% if assistant_symbol %}
+            <li>{{ assistant_symbol }}'s current price, and your position in it or how many shares your cash would buy</li>
+            <li>{{ assistant_symbol }}'s stored price history: 1 month, 6 months, 1 year and all-time ranges, and the latest trading session</li>
+        {% endif %}
+        <li>Your last 3 questions and answers in this panel</li>
+    </ul>
+    <h3>From the web</h3>
+    <ul>
+        <li>
+            Google Search, for news, earnings and company background{% if not assistant_research %}.
+            Off right now, so answers use only your account data and can't
+            include recent news{% endif %}
+        </li>
+    </ul>
+    <h3>Never</h3>
+    <ul>
+        <li>Your name or email address, or anyone else's account</li>
+    </ul>
+</div>
