@@ -179,8 +179,10 @@ def sell_stock(user_id):
 
     try:
         price = market_data.get_live_price(symbol)
-    except Exception as e:
-        print(f"Could not look up {symbol}: {e}")
+    except Exception:
+        # market_data logs the underlying yfinance error; a library
+        # message means nothing to the person at the prompt.
+        print(f"Could not look up {symbol} right now. Try again in a minute.")
         return
 
     if price is None:

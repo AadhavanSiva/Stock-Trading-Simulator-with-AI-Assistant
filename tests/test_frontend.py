@@ -103,10 +103,13 @@ class TestLandingWeight:
     def test_local_assets_stay_within_budget(self):
         """CSS + both scripts, well inside the 1MB page budget alongside a
         ~150KB gzipped Three.js."""
-        total = sum(
-            os.path.getsize(os.path.join(ROOT, "static", name))
-            for name in ("style.css", "app.js", "hero.js")
-        )
+        # Counted with line endings normalised to LF, as the repository
+        # stores them. A Windows checkout with core.autocrlf rewrites them
+        # as CRLF, which would add a byte per line on one machine only.
+        total = 0
+        for name in ("style.css", "app.js", "hero.js"):
+            with open(os.path.join(ROOT, "static", name), "rb") as fh:
+                total += len(fh.read().replace(b"\r\n", b"\n"))
         assert total < 100_000, f"local assets total {total} bytes"
 
 

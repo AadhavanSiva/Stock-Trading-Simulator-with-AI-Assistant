@@ -94,7 +94,7 @@ class TestAuthGate:
         assert anon.post("/login/dev", data={"email": "x@y.com"}).status_code == 404
 
     def test_logout_clears_the_session(self, client):
-        client.get("/logout")
+        client.post("/logout")
         # Signed out, `/` shows the landing page rather than the portfolio.
         assert "Open an account" in text(client.get("/"))
         assert client.get("/balance").status_code == 302

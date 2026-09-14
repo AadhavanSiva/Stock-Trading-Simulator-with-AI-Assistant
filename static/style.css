@@ -231,6 +231,8 @@ code, .mono { font-family: var(--font-mono); }
 
 .account { display: flex; align-items: center; gap: var(--s4); font-size: .875rem; }
 .account-name { color: var(--color-text-2); max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signout-form { display: inline; margin: 0; }
+button.signout { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .signout { color: var(--color-text-2); text-decoration: none; }
 .signout:hover { color: var(--color-text); text-decoration: underline; }
 

@@ -43,6 +43,7 @@ GOOGLE_CLIENT_SECRET=...</pre>
             it when you are done.
         </p>
         <form method="post" action="{{ url_for('login_dev') }}" data-busy-label="Signing in…">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="field">
                 <label for="dev-email">Email address</label>
                 <input type="email" id="dev-email" name="email"

@@ -1,18 +1,25 @@
 {% extends "base.html" %}
-{% block title %}{{ code }} · Portfolio Tracker{% endblock %}
+{% block title %}{{ title or ('Error ' ~ code) }} · Portfolio Tracker{% endblock %}
 
+{# One page for 400, 404 and 500. It never shows an exception, a traceback
+   or any detail of what failed: those are logged on the server. #}
 {% block content %}
 <div class="panel">
-    <div class="empty">
+    <div class="empty" role="{{ 'alert' if code >= 500 else 'status' }}">
         <div class="empty-rule" aria-hidden="true"></div>
         <p class="label">Error {{ code }}</p>
-        <h2>{{ message }}</h2>
-        <p>
-            The address may be mistyped, or the page may have moved. Nothing
-            in your account has changed.
-        </p>
+        <h1 style="font-size:1.5rem">{{ title or message }}</h1>
+        {% if title %}<p>{{ message }}</p>{% endif %}
+        {% if code == 404 %}
+            <p>The address may be mistyped, or the page may have moved.</p>
+        {% endif %}
         <div class="actions">
-            <a class="btn btn-primary" href="{{ url_for('index') }}">Back to your portfolio</a>
+            {% if retry_url %}
+                <a class="btn btn-primary" href="{{ retry_url }}">Try again</a>
+                <a class="btn btn-secondary" href="{{ url_for('index') }}">Back to your portfolio</a>
+            {% else %}
+                <a class="btn btn-primary" href="{{ url_for('index') }}">Back to your portfolio</a>
+            {% endif %}
         </div>
     </div>
 </div>

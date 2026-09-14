@@ -40,6 +40,7 @@
     </p>
 
     <form method="post" action="{{ url_for('buy_confirm') }}" data-busy-label="Buying…">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="symbol" value="{{ quote.symbol }}">
         <input type="hidden" name="shares" value="{{ shares }}">
         <div class="actions">

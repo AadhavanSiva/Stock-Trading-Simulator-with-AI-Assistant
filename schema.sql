@@ -85,3 +85,18 @@ CREATE TABLE IF NOT EXISTS price_intraday (
 
 CREATE INDEX IF NOT EXISTS price_intraday_symbol_ts_idx
     ON price_intraday (symbol, ts DESC);
+
+-- One row per question asked of the assistant, for its rate limit.
+--
+-- In the database rather than in memory so the limit survives a restart and
+-- holds across every worker process. Rows older than the limit's window are
+-- deleted as each new question is checked, so this stays small: at most
+-- the limit's worth of rows per account.
+CREATE TABLE IF NOT EXISTS assistant_requests (
+    id        BIGSERIAL PRIMARY KEY,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    asked_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS assistant_requests_user_time_idx
+    ON assistant_requests (user_id, asked_at);

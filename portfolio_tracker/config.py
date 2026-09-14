@@ -11,10 +11,49 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
-# Flask session signing key. Set FLASK_SECRET_KEY in .env to keep flash
-# messages working across restarts; otherwise a fresh random key is
-# generated per process. Never hardcode a real one.
-SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
+# Flask session signing key. It signs the session cookie and the CSRF
+# tokens, so it must stay the same across restarts and across every process
+# serving the app. Required outside debug mode; see flask_secret_key().
+# Generate one with:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "").strip() or None
+
+
+class ConfigurationError(RuntimeError):
+    """A setting the app cannot safely run without is missing."""
+
+
+def flask_secret_key(debug):
+    """The key Flask signs sessions with.
+
+    In production a missing key must stop the app at startup. Silently
+    generating a random one would sign everyone out on every restart, and
+    with more than one worker process each would reject the others'
+    sessions and CSRF tokens, which looks like random failures. Local
+    development (debug mode) still gets a throwaway key so the app runs
+    without setup.
+    """
+    if SECRET_KEY:
+        return SECRET_KEY
+    if debug:
+        return secrets.token_hex(32)
+    raise ConfigurationError(
+        "FLASK_SECRET_KEY is not set. It is required when the app is not "
+        "running in debug mode. Generate one with\n"
+        '    python -c "import secrets; print(secrets.token_hex(32))"\n'
+        "and add FLASK_SECRET_KEY=<that value> to .env (or the server's "
+        "environment), then start the app again."
+    )
+
+
+# --- Market data ------------------------------------------------------------
+# Upper bounds, in seconds, on a single Yahoo Finance request. A quote backs a
+# page load, so it gives up sooner; a full price history can be large.
+MARKET_QUOTE_TIMEOUT = float(os.getenv("MARKET_QUOTE_TIMEOUT", "8"))
+MARKET_HISTORY_TIMEOUT = float(os.getenv("MARKET_HISTORY_TIMEOUT", "20"))
+# How long a looked-up quote is reused for page views before asking Yahoo
+# again. Buying, selling and "Refresh prices" always fetch a fresh price.
+QUOTE_CACHE_SECONDS = float(os.getenv("QUOTE_CACHE_SECONDS", "30"))
 
 # --- Google sign-in -------------------------------------------------------
 # Create these at console.cloud.google.com: APIs & Services > Credentials >

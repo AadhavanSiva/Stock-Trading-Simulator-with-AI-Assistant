@@ -69,6 +69,7 @@
                 </p>
                 <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
                       data-busy-label="Loading full history…">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="range" value="{{ window }}">
                     <button type="submit" class="btn btn-secondary btn-sm">Load full history</button>
                 </form>
@@ -164,6 +165,7 @@
                 </p>
                 <form method="post" action="{{ url_for('stock_fetch', symbol=symbol) }}"
                       data-busy-label="Fetching…">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="range" value="{{ window }}">
                     <button type="submit" class="btn btn-secondary btn-sm">Fetch more</button>
                 </form>
@@ -185,6 +187,7 @@
             <form method="post"
                   action="{{ url_for('stock_fetch', symbol=symbol) }}"
                   data-busy-label="Fetching…">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="range" value="{{ window }}">
                 <div class="actions">
                     <button type="submit" class="btn btn-primary">
@@ -260,6 +263,7 @@
             {# Real forms: without JavaScript each opens the Ask page with the
                question answered. app.js sends them to the panel instead. #}
             <form method="post" action="{{ url_for('assistant_page') }}" class="starter-list" data-ask-starters>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="symbol" value="{{ symbol }}">
                 <button type="submit" name="question" value="What has moved {{ symbol }}'s price over the past year?">What has moved {{ symbol }}'s price over the past year?</button>
                 <button type="submit" name="question" value="What does {{ quote.company_name }} do, and how does it make money?">What does {{ quote.company_name }} do, and how does it make money?</button>

@@ -631,8 +631,14 @@
             refused: "Ask can't help with that one",
             failed: "Ask couldn't answer that",
             network: "Couldn't reach the app",
-            aborted: "Stopped"
+            aborted: "Stopped",
+            expired: "This page has expired"
         };
+
+        function csrfToken() {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute("content") : "";
+        }
 
         function failure(question, kind, message, retryAfter) {
             var box = el("div", "turn turn-error" + (kind === "failed" || kind === "network" ? "" : " is-info"));
@@ -652,6 +658,12 @@
                     setTimeout(tick, 1000);
                 };
                 tick();
+            }
+            if (kind === "expired") {
+                var reload = el("button", "btn btn-secondary btn-sm", "Reload page");
+                reload.type = "button";
+                reload.addEventListener("click", function () { window.location.reload(); });
+                box.appendChild(reload);
             }
             if (kind === "failed" || kind === "network" || kind === "aborted") {
                 var retry = el("button", "btn btn-secondary btn-sm", "Try again");
@@ -742,7 +754,12 @@
             fetch("/api/assistant", {
                 method: "POST",
                 signal: controller ? controller.signal : undefined,
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    // Checked by the server with every POST (Flask-WTF).
+                    "X-CSRFToken": csrfToken()
+                },
                 body: JSON.stringify({
                     question: question,
                     symbol: symbol,

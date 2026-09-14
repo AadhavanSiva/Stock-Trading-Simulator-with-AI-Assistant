@@ -52,6 +52,7 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('buy_review') }}" data-busy-label="Checking…" style="margin-top:var(--s5)">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="symbol" value="{{ quote.symbol }}">
 
         <div class="field">

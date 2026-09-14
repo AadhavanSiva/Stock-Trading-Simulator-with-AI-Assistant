@@ -9,6 +9,10 @@
     <link rel="preload" href="{{ url_for('static', filename='fonts/IBMPlexSans-Variable.woff2') }}" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="data:,">
+    {% if current_user %}
+        {# Read by app.js and sent as X-CSRFToken with the JSON Ask request. #}
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% endif %}
     {# Small, unminified, and in the head so the reveal class is set before
        first paint. It hides nothing unless it has confirmed it can finish. #}
     <script src="{{ url_for('static', filename='app.js') }}"></script>
@@ -46,7 +50,11 @@
                     <span class="cash-figure">{{ current_user.cash | money }}</span>
                 </a>
                 <span class="account-name">{{ current_user.display_name }}</span>
-                <a class="signout" href="{{ url_for('logout') }}">Sign out</a>
+                {# A POST with a CSRF token: a sign-out link could be triggered by any site. #}
+                <form class="signout-form" method="post" action="{{ url_for('logout') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="signout">Sign out</button>
+                </form>
             </div>
         {% else %}
             <div class="account" style="margin-left:auto">
@@ -157,6 +165,7 @@
 
         <form class="assistant-form" data-assistant-form method="post"
               action="{{ url_for('assistant_page') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="symbol" value="{{ assistant_symbol or '' }}">
             <label for="assistant-question">Your question</label>
             <textarea id="assistant-question" name="question" rows="2" maxlength="1000"

@@ -1,5 +1,7 @@
 # Stock Trading Simulator with AI Assistant
 
+[![Tests](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml)
+
 A Python + PostgreSQL paper-trading app: buy and sell real stocks at live market prices with practice money, then ask an AI research assistant about any stock or your own portfolio. Built as a hands-on project to practice relational database design, API integration, and secure data handling.
 
 It has two front ends — a terminal menu and a Flask web interface — sharing one set of models and one operations layer, so both behave identically. Accounts sign in with Google, and each one gets a $50,000 practice cash balance to trade with. The web app adds stock pages with 1D-to-all-time price charts and Ask, an assistant powered by Google's Gemini that is grounded in the app's own data and can research stocks with Google Search.
@@ -242,7 +244,15 @@ while you are filling one in.
    PORTFOLIO_USER=you@gmail.com
    ```
 
-   Optionally override `DB_HOST`, `DB_NAME`, `DB_USER`, or `DB_PORT` — they default to `localhost`, `practice`, `postgres`, and `5432`. `STARTING_CASH` defaults to `50000`, and `FLASK_SECRET_KEY` keeps flash messages working across restarts.
+   Optionally override `DB_HOST`, `DB_NAME`, `DB_USER`, or `DB_PORT` — they default to `localhost`, `practice`, `postgres`, and `5432`. `STARTING_CASH` defaults to `50000`.
+
+   **`FLASK_SECRET_KEY` is required anywhere the app runs without debug mode.** It signs session cookies and CSRF tokens, and the app refuses to start without it rather than inventing a random key (which would sign everyone out on every restart and break sessions across worker processes). Generate one with:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+
+   and add `FLASK_SECRET_KEY=<that value>` to `.env`. Running locally with `python -m flask --app web run --debug` works without it: debug mode gets a throwaway key.
 
    `.env` is git-ignored, and nothing above is ever hardcoded — it all arrives through `config.py`.
 
@@ -318,14 +328,34 @@ It creates `users`, gives `portfolio` a `user_id`, and swaps `UNIQUE (symbol)` f
 
 Both migrations are safe to re-run.
 
+Migrations 003 and 004 add intraday prices and the full-history marker (see "Stock pages and charts"). Migration 005 moves the assistant's rate limit into the database:
+
+```bash
+psql -U postgres -d practice -f migrations/005_assistant_rate_limit.sql
+```
+
+Every migration is safe to re-run.
+
+## Security notes
+
+- **CSRF tokens on every state-changing request.** Flask-WTF's `CSRFProtect` checks every POST: buying and selling (each step), refreshing prices, loading history, fetching chart data, the Ask page and its JSON endpoint, dev sign-in, and signing out. Forms carry a hidden `csrf_token`; the Ask panel sends the same token as an `X-CSRFToken` header. The Ask endpoint used to rely on accepting only JSON, which stops a plain cross-site HTML form but not every cross-site request, so it now needs the token too. A request without a valid token is refused with 400 before the route runs: no trade, no API call, nothing counted against the rate limit. Tokens are tied to the session and last as long as it does.
+- **Signing out is a POST.** A sign-out link could be triggered by any other site with an image tag. An old link to `/logout` now shows a page with a Sign out button instead.
+- **A fixed signing key in production.** See `FLASK_SECRET_KEY` under Setup.
+- **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from Yahoo Finance or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
+- **Market data calls are bounded.** Every yfinance call has a time limit (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
+- **The assistant's rate limit is in the database** (20 questions per account per 10 minutes), so it survives restarts and holds across every worker process.
+- **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
+
 ## Tests
 
 ```bash
-pip install pytest
-pytest
+pip install -r requirements.txt
+python -m pytest
 ```
 
-Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere. Network calls to yfinance are mocked, so the suite is offline and deterministic.
+Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. yfinance and Gemini are mocked, and a test that reaches the real Gemini API fails.
+
+GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.10.4 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
 
 ## What I Gained from building this
 
