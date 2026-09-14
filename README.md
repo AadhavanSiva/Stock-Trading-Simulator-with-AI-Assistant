@@ -1,8 +1,8 @@
-# Live Portfolio Tracker
+# Stock Trading Simulator with AI Assistant
 
-A Python + PostgreSQL application that tracks a stock portfolio using real-time market data. Built as a hands-on project to practice relational database design, API integration, and secure data handling.
+A Python + PostgreSQL paper-trading app: buy and sell real stocks at live market prices with practice money, then ask an AI research assistant about any stock or your own portfolio. Built as a hands-on project to practice relational database design, API integration, and secure data handling.
 
-It has two front ends — a terminal menu and a Flask web interface — sharing one set of models and one operations layer, so both behave identically. Accounts sign in with Google, and each one gets a $50,000 practice cash balance to trade with.
+It has two front ends — a terminal menu and a Flask web interface — sharing one set of models and one operations layer, so both behave identically. Accounts sign in with Google, and each one gets a $50,000 practice cash balance to trade with. The web app adds stock pages with 1D-to-all-time price charts and Ask, an assistant powered by Google's Gemini that is grounded in the app's own data and can research stocks with Google Search.
 
 ## Features
 
@@ -29,6 +29,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - **python-dotenv** — environment variable management
 - **Flask** — server-rendered web interface (Jinja templates, plain CSS, no build step)
 - **Authlib** — Google OAuth / OpenID Connect
+- **Google Gemini** (`google-genai`) — the Ask research assistant
 - **pytest** — test suite
 
 ## Database Schema
