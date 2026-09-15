@@ -47,6 +47,9 @@ def isolated_auth_config(monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", None)
     monkeypatch.setattr(config, "ALLOW_DEV_LOGIN", False)
     monkeypatch.setattr(config, "PORTFOLIO_USER", None)
+    # A DATABASE_URL in .env points at a real (possibly hosted) database;
+    # the app would connect there instead of the throwaway test database.
+    monkeypatch.setattr(config, "DATABASE_URL", None)
     # Same reasoning for the assistant: an ASSISTANT_MODEL in someone's .env
     # must not change what the tests assert.
     monkeypatch.setattr(config, "ASSISTANT_ENABLED", True)

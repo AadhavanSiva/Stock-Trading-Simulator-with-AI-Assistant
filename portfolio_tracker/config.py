@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# A full connection string, as hosted databases (Neon, Render, ...) hand
+# out: postgresql://user:password@host/dbname?sslmode=require. When set it
+# is used as-is, query options included, and the DB_* settings below are
+# ignored. Local development keeps using the DB_* settings.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_NAME = os.getenv("DB_NAME", "practice")
 DB_USER = os.getenv("DB_USER", "postgres")
@@ -17,6 +23,13 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 # Generate one with:
 #   python -c "import secrets; print(secrets.token_hex(32))"
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "").strip() or None
+
+# Set when the app runs behind a proxy that terminates HTTPS (Render, Heroku,
+# a load balancer). The app then trusts one hop of X-Forwarded-* headers, so
+# it builds https:// links (Google sign-in rejects an http:// callback), and
+# marks the session cookie Secure. Leave unset locally: without a proxy in
+# front, anyone could send those headers.
+BEHIND_HTTPS_PROXY = os.getenv("BEHIND_HTTPS_PROXY", "").strip().lower() in ("1", "true", "yes")
 
 
 class ConfigurationError(RuntimeError):

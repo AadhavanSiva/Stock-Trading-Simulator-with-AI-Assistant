@@ -18,6 +18,7 @@ from flask import (
     Flask, abort, flash, g, redirect, render_template, request, session, url_for,
 )
 from flask_wtf.csrf import CSRFError, CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
@@ -37,6 +38,13 @@ app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or __name__ =
 # page left open is not refused on its next click.
 app.config["WTF_CSRF_TIME_LIMIT"] = None
 csrf = CSRFProtect(app)
+
+# Behind a hosting proxy the request reaches Flask as plain http from the
+# proxy. Trusting its one hop of X-Forwarded-* headers is what makes
+# url_for(_external=True) produce the https:// callback Google expects.
+if config.BEHIND_HTTPS_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config["SESSION_COOKIE_SECURE"] = True
 
 oauth = OAuth(app)
 if config.google_configured():

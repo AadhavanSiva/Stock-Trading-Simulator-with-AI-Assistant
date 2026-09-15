@@ -305,8 +305,49 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    `--app` needs Flask 2.2 or newer. The `python -m` form always uses the
    same interpreter as `python`, so it cannot drift.
 
-   Optionally set `FLASK_SECRET_KEY` in `.env` to keep flash messages working
-   across restarts; without it a random key is generated per process.
+   In debug mode `FLASK_SECRET_KEY` is optional; set it in `.env` to keep
+   sessions and flash messages working across restarts.
+
+## Deploying (Render + Neon, free tiers)
+
+The app runs on a [Render](https://render.com) free web service with a
+[Neon](https://neon.tech) free PostgreSQL database. `render.yaml` describes
+the service, so Render needs no hand-entered build settings.
+
+1. **Database.** Create a Neon project and copy its connection string
+   (Dashboard → Connect). The pooled one, with `-pooler` in the host name,
+   suits this app, which opens a short connection per query. It looks like
+   `postgresql://user:password@ep-xxx-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require`.
+2. **Service.** In Render: New → Blueprint, pick this repository, and fill in
+   the values it asks for: `DATABASE_URL` (the Neon string), `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` and `GEMINI_API_KEY`. `FLASK_SECRET_KEY` is generated
+   for you. Every build runs `python -m portfolio_tracker.init_db`, which
+   creates any missing tables, so a new database needs no manual step.
+3. **Google sign-in.** Once Render shows the service URL, add
+   `https://<your-service>.onrender.com/auth/callback` to the OAuth client's
+   Authorized redirect URIs. While the consent screen is in Testing, only
+   the test users listed there can sign in.
+
+What the Blueprint sets and why:
+
+- **Python 3.10.4**, as in CI. `pandas==2.0.3` has no wheels for 3.12+.
+- **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
+  HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
+  `ProxyFix`) to build `https://` links, and marks the session cookie
+  Secure. Never set it locally.
+- **`gunicorn web:app --workers 1 --threads 8 --timeout 150`.** One process
+  keeps the quote cache shared; the timeout outlasts the assistant's 120 s
+  limit.
+
+`DATABASE_URL` is passed to the driver whole, so `sslmode=require` applies.
+Locally, leave it unset and the `DB_*` settings are used as before; the
+tests ignore it, so they can never reach the hosted database.
+
+Expect a cold start of up to a minute after the free service has slept
+(15 minutes idle), and a brief pause while an idle Neon database wakes.
+Yahoo Finance also rate-limits some cloud IP ranges more readily than home
+connections; when that happens the app says prices could not be fetched
+rather than showing an error page.
 
 ## Upgrading an existing database
 

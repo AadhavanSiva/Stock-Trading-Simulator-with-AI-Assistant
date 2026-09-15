@@ -1,0 +1,30 @@
+# Render Blueprint: New > Blueprint in the Render dashboard, pick this repo.
+# Values marked "sync: false" are secrets; Render asks for them when the
+# Blueprint is created and they never live in this file. See README, "Deploying".
+services:
+  - type: web
+    name: stock-trading-simulator
+    runtime: python
+    plan: free
+    # schema.sql only creates what is missing, so applying it on every build
+    # is safe, and a fresh database is ready before the first request.
+    buildCommand: pip install -r requirements.txt && python -m portfolio_tracker.init_db
+    # One process, so the 30 s quote cache is shared; threads for concurrent
+    # requests. The timeout exceeds the assistant's 120 s Gemini time limit.
+    startCommand: gunicorn web:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 150
+    envVars:
+      # pandas 2.0.3 has no wheels for 3.12+; this matches CI and local development.
+      - key: PYTHON_VERSION
+        value: 3.10.4
+      - key: BEHIND_HTTPS_PROXY
+        value: "1"
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
