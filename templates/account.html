@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% set active = 'account' %}
+{% block title %}Account · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">Your account</span>
+    <h1>Account</h1>
+</div>
+
+<div class="panel">
+    <div class="panel-head">
+        <h2>Signed in as</h2>
+    </div>
+    <dl class="detail-list">
+        <div>
+            <dt>Name</dt>
+            <dd>{{ current_user.display_name }}</dd>
+        </div>
+        <div>
+            <dt>Email</dt>
+            <dd>{{ current_user.email }}</dd>
+        </div>
+        <div>
+            <dt>Cash</dt>
+            <dd class="num">{{ current_user.cash | money }}</dd>
+        </div>
+        <div>
+            <dt>Trades recorded</dt>
+            <dd class="num">{{ trade_count }}</dd>
+        </div>
+    </dl>
+</div>
+
+<div class="panel">
+    <div class="panel-head">
+        <h2>Take your data with you</h2>
+    </div>
+    <p>
+        A JSON file containing your account details, every holding with what you
+        paid for it, and your complete trade history. It is your data, in a
+        format you can read or load somewhere else — not a screenshot of it.
+    </p>
+    <p class="faint">
+        Market prices are left out. Those are shared reference data that every
+        account sees, not anything particular to you.
+    </p>
+    <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('account_export') }}">Download my data</a>
+    </div>
+</div>
+
+<div class="panel panel-danger">
+    <div class="panel-head">
+        <h2>Delete this account</h2>
+    </div>
+    <p>
+        This removes your account, your cash balance, every position you hold and
+        your entire trade history. It happens in one step and
+        <strong>cannot be undone</strong> — there is no backup to restore from and
+        no way for anyone to recover it for you.
+    </p>
+    <p class="faint">
+        If you only want a copy of what is here, download your data first. The
+        export link above stays available until the moment you delete.
+    </p>
+
+    <form method="post" action="{{ url_for('account_delete') }}" class="delete-form"
+          data-confirm-word="{{ confirmation }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+            <label for="confirmation">
+                Type <strong class="confirm-word">{{ confirmation }}</strong> to confirm
+            </label>
+            <input type="text" id="confirmation" name="confirmation"
+                   autocomplete="off" autocapitalize="characters" spellcheck="false"
+                   aria-describedby="confirmation-help" required>
+            <p class="field-help" id="confirmation-help">
+                Typing the word is deliberate: a button on its own is one mis-click
+                away from losing everything.
+            </p>
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-danger">Delete my account permanently</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

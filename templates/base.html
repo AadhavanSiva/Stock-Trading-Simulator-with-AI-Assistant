@@ -40,6 +40,7 @@
                 <a href="{{ url_for('balance') }}"      {% if active == 'balance' %}class="is-active" aria-current="page"{% endif %}>Balance</a>
                 <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active" aria-current="page"{% endif %}>Buy</a>
                 <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active" aria-current="page"{% endif %}>Sell</a>
+                <a href="{{ url_for('trades_view') }}"  {% if active == 'trades' %}class="is-active" aria-current="page"{% endif %}>Activity</a>
                 <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active" aria-current="page"{% endif %}>History</a>
                 <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active" aria-current="page"{% endif %}>Update</a>
             </nav>
@@ -49,7 +50,8 @@
                     <span class="label">Cash</span>
                     <span class="cash-figure">{{ current_user.cash | money }}</span>
                 </a>
-                <span class="account-name">{{ current_user.display_name }}</span>
+                <a class="account-name" href="{{ url_for('account') }}"
+                   {% if active == 'account' %}aria-current="page"{% endif %}>{{ current_user.display_name }}</a>
                 {# A POST with a CSRF token: a sign-out link could be triggered by any site. #}
                 <form class="signout-form" method="post" action="{{ url_for('logout') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

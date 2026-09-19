@@ -21,6 +21,11 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - Google sign-in (OpenID Connect via Authlib); accounts are keyed on Google's stable `sub` claim, not the email
 - Per-account cash balance: buys debit it, sells credit it, and a purchase that exceeds it is refused inside the database transaction
 - Every holding is scoped to its owner, enforced by a `UNIQUE (user_id, symbol)` constraint rather than by convention
+- An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
+- Realized gain per position and overall, computed from that log, kept distinct from the unrealized gain on what is still held
+- "Recent activity" on the portfolio page and a full, paged trade history
+- Account deletion that actually deletes: one transaction, a typed confirmation, and no orphaned rows left behind
+- A JSON export of an account's own data — profile, holdings and full trade history
 
 ## Tech Stack
 
@@ -40,6 +45,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - `stocks` — reference data per ticker (symbol, company name, latest price), shared by all accounts
 - `portfolio` — holdings (owner, symbol, shares, purchase price). `UNIQUE (user_id, symbol)`: one row per ticker *per account*, so a repeat buy blends into a weighted-average cost basis rather than opening a second lot. The `user_id` in that constraint is load-bearing — a bare `UNIQUE (symbol)` would collide across accounts and hand one person another person's position.
 - `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run
+- `trades` — every buy and sell: owner, symbol, side, shares, price per share, total value, and when. **Append-only, enforced by the database.** A `BEFORE UPDATE OR DELETE` trigger refuses to rewrite a row, so the ledger cannot drift from what actually happened — a correction is a new row, never an edit. Each row is written inside the same transaction that moves the cash and the shares, so the log and the balances can never disagree. Sells also record the weighted-average `cost_basis` they were priced against, captured while the holding is locked, which is what makes realized gain a plain `SUM` rather than a replay of every prior buy.
 
 Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.)
 
@@ -53,6 +59,7 @@ portfolio_tracker/
         stocks.py          ticker reference data
         portfolio.py       holdings
         history.py         daily OHLCV
+        trades.py          the append-only trade log
         users.py           accounts and cash balances
     services/
         market_data.py     the only module that talks to yfinance
@@ -375,6 +382,19 @@ Migrations 003 and 004 add intraday prices and the full-history marker (see "Sto
 psql -U postgres -d practice -f migrations/005_assistant_rate_limit.sql
 ```
 
+Migration 006 adds the trade log:
+
+```bash
+psql -U postgres -d practice -f migrations/006_trades.sql
+```
+
+It creates `trades`, installs the append-only trigger, and gives each
+existing holding one synthesized opening row at the weighted-average cost
+the position already carries. Those rows are flagged `backfilled` and dated
+from the account's creation, because the original purchases happened at
+prices and times nobody recorded — the app labels them "opening position"
+rather than present a reconstruction as a trade that was observed.
+
 Every migration is safe to re-run.
 
 ## Security notes
@@ -385,6 +405,10 @@ Every migration is safe to re-run.
 - **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from Yahoo Finance or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
 - **Market data calls are bounded.** Every yfinance call has a time limit (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
 - **The assistant's rate limit is in the database** (20 questions per account per 10 minutes), so it survives restarts and holds across every worker process.
+- **The trade log cannot be rewritten.** `trades` carries a trigger that refuses any `UPDATE` or `DELETE`, so neither an application bug nor a hand-typed `psql` session can quietly alter the record of what happened. The one sanctioned exception is erasing an account, which sets `app.erasing_account` with `SET LOCAL` for the length of that one transaction; the exemption ends when the transaction does and cannot leak into a later query. A direct `DELETE FROM users` is therefore refused, with a hint naming `users.delete_account` as the way through.
+- **Deleting an account really deletes it.** One transaction removes the user row, and `ON DELETE CASCADE` takes the positions, the trade history and the rate-limit rows with it — so a table added later is covered by the schema rather than by somebody remembering to extend a list of `DELETE` statements. A test walks `information_schema` to assert that *nothing* referencing `users` keeps a row. Shared market data is deliberately left alone: prices belong to everyone.
+- **Deletion needs a typed word, not a click.** The form requires the word `DELETE`, and `operations.delete_account` re-checks it, so the guard does not live only in a template that a second front end might not render. Deleting is a `POST` with a CSRF token, and a `GET` cannot do it.
+- **The data export is a download, never cached.** It carries `Cache-Control: no-store`, and money is exported as strings rather than floats so a cost basis of `164.20` survives the round trip exactly.
 - **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
 
 ## Tests

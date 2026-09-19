@@ -100,3 +100,84 @@ CREATE TABLE IF NOT EXISTS assistant_requests (
 
 CREATE INDEX IF NOT EXISTS assistant_requests_user_time_idx
     ON assistant_requests (user_id, asked_at);
+
+-- Every buy and sell, append-only.
+--
+-- This is the account's ledger: the positions in `portfolio` are a running
+-- total, but this is how they got that way. Each row is written inside the
+-- same transaction that moves the cash and the shares (see
+-- models/portfolio.py), so the log can never disagree with the balances —
+-- there is no path that records a trade without moving the money, or the
+-- other way round.
+--
+-- `cost_basis` is the weighted-average price per share at the instant of a
+-- sale, captured while the holding is locked. It is what makes realized
+-- gain a plain sum over this table instead of a replay of every prior buy,
+-- and it is only meaningful on a sell, which the CHECK below enforces.
+CREATE TABLE IF NOT EXISTS trades (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol      TEXT NOT NULL REFERENCES stocks(symbol),
+    side        TEXT NOT NULL
+        CONSTRAINT trades_side_known CHECK (side IN ('buy', 'sell')),
+    shares      NUMERIC NOT NULL
+        CONSTRAINT trades_shares_positive CHECK (shares > 0 AND shares <> 'NaN'),
+    price       NUMERIC NOT NULL
+        CONSTRAINT trades_price_sane CHECK (price >= 0 AND price <> 'NaN'),
+    -- The cash that actually moved, in whole cents, as the transaction
+    -- applied it. Stored rather than recomputed so the ledger reports the
+    -- figure the balance was changed by, not a re-rounding of it.
+    total_value NUMERIC NOT NULL
+        CONSTRAINT trades_total_value_sane CHECK (total_value >= 0 AND total_value <> 'NaN'),
+    cost_basis  NUMERIC
+        CONSTRAINT trades_cost_basis_sane
+        CHECK (cost_basis IS NULL OR (cost_basis >= 0 AND cost_basis <> 'NaN'))
+        CONSTRAINT trades_cost_basis_only_on_sells
+        CHECK ((side = 'sell') = (cost_basis IS NOT NULL)),
+    -- True for the opening rows migration 006 synthesized for positions
+    -- that predate this table, so the UI can say "opening position" rather
+    -- than present a trade that never happened at a time it did not happen.
+    backfilled  BOOLEAN NOT NULL DEFAULT FALSE,
+    traded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Paging reads newest-first; id breaks ties so two trades in the same
+-- instant cannot swap places between one page and the next.
+CREATE INDEX IF NOT EXISTS trades_user_time_idx
+    ON trades (user_id, traded_at DESC, id DESC);
+
+-- Realized gain per position groups by symbol within one account.
+CREATE INDEX IF NOT EXISTS trades_user_symbol_idx
+    ON trades (user_id, symbol);
+
+-- A ledger the application can only append to.
+--
+-- Immutability here is not a convention the code is trusted to keep: the
+-- database refuses the UPDATE or DELETE outright, so a bug, a stray query
+-- or a hand-typed psql session cannot quietly rewrite what happened. A
+-- correction is a new row, never an edit to an old one.
+--
+-- The one sanctioned exception is erasing an account: deleting a person's
+-- data has to be able to remove their trades too. That path sets
+-- app.erasing_account for the length of its transaction (see
+-- users.delete_account), which is deliberately awkward to do by accident
+-- and shows up plainly in the code that does it.
+CREATE OR REPLACE FUNCTION trades_append_only() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE'
+       AND current_setting('app.erasing_account', true) = 'on' THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'trades is append-only: % on trade id % was refused',
+                    TG_OP, OLD.id
+        USING ERRCODE = 'restrict_violation',
+              HINT = 'Corrections are new rows, never edits. Deleting an '
+                     'account is the one exception: use users.delete_account, '
+                     'which sets app.erasing_account for its transaction.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trades_no_rewrite ON trades;
+CREATE TRIGGER trades_no_rewrite
+    BEFORE UPDATE OR DELETE ON trades
+    FOR EACH ROW EXECUTE FUNCTION trades_append_only();

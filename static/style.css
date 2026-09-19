@@ -1123,3 +1123,79 @@ textarea { resize: vertical; line-height: 1.45; }
     .scroll-progress { display: none; }
     .hero-stage canvas { display: none; }
 }
+
+/* ---------------------------------------------- trades and activity ----
+
+   A trade is a fact, not a verdict: the side tag is neutral, because
+   selling is not a failure and buying is not an achievement. Realized
+   figures reuse .delta, so a banked gain and a paper one read alike —
+   the column heading is what tells them apart.                         */
+
+.side-tag {
+    display: inline-block; white-space: nowrap;
+    font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    padding: .125rem var(--s2); border-radius: var(--radius-pill);
+    background: var(--color-surface-2); color: var(--color-text-2);
+    border: 1px solid var(--border-divider);
+}
+.side-buy  { border-color: var(--color-brand); color: var(--color-brand); }
+.account-name:hover { color: var(--color-text); }
+
+.activity { list-style: none; margin: 0; padding: 0; }
+.activity-row {
+    display: grid; align-items: center; gap: var(--s2) var(--s4);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    padding: var(--s3) 0; border-top: 1px solid var(--border-divider);
+}
+.activity-row:first-child { border-top: 0; padding-top: 0; }
+.activity-symbol { color: inherit; text-decoration: none; }
+.activity-symbol:hover .ticker { text-decoration: underline; }
+.activity-what {
+    display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+    color: var(--color-text-2); font-size: .875rem;
+}
+.activity-what .num { color: var(--color-text); }
+.activity-when { font-size: .8125rem; }
+.activity-value { font-weight: 600; text-align: right; white-space: nowrap; }
+
+.pager {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--s4); padding: var(--s3) var(--s5);
+    border-top: 1px solid var(--border-divider);
+}
+.pager-count { margin: 0; font-size: .875rem; }
+/* Kept in the layout, not removed, so the controls do not shift sideways
+   on the first and last page. */
+.is-disabled { opacity: .4; pointer-events: none; }
+
+.detail-list { margin: 0; display: grid; gap: var(--s3); }
+.detail-list > div {
+    display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4);
+    justify-content: space-between; align-items: baseline;
+    padding-bottom: var(--s3); border-bottom: 1px solid var(--border-divider);
+}
+.detail-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.detail-list dt { color: var(--color-text-2); font-size: .9375rem; }
+.detail-list dd { margin: 0; font-weight: 600; }
+
+/* --------------------------------------------------- destructive acts --
+
+   Deliberately the error palette, never --color-loss: red here means
+   "this cannot be undone", not "this investment lost money". Borrowing
+   the loss colour would make the two read as the same kind of news.
+   The panel is bordered rather than filled, because a red wash behind a
+   whole block reads as an error that has already happened.             */
+
+.panel-danger { border-color: var(--color-error); }
+.panel-danger .panel-head h2 { color: var(--color-error-text); }
+.btn-danger { background: var(--color-error); color: #FFF; border-color: var(--color-error); }
+.btn-danger:hover { background: var(--color-error-text); border-color: var(--color-error-text); color: #FFF; }
+.delete-form .field { max-width: 20rem; }
+.confirm-word { font-family: var(--font-mono); letter-spacing: .08em; }
+.field-help { color: var(--color-text-2); font-size: .8125rem; margin: var(--s2) 0 0; }
+
+@media (max-width: 720px) {
+    .activity-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .activity-when { grid-column: 1 / -1; }
+    .pager { flex-wrap: wrap; justify-content: center; }
+}

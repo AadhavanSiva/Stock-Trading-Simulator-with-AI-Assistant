@@ -1,9 +1,17 @@
+from collections import namedtuple
 from decimal import Decimal, ROUND_HALF_UP
 
 from portfolio_tracker.db import cursor
 from portfolio_tracker.errors import InsufficientFunds, UnknownUser
+from portfolio_tracker.models import trades
 
 CENTS = Decimal("0.01")
+
+# What a sale settled at. `cost_basis` is the weighted-average cost of the
+# shares sold, read while the holding was locked — the caller needs it to
+# report the realized gain, and reading it separately afterwards would race
+# a concurrent buy that changes the average.
+SaleResult = namedtuple("SaleResult", "sold remaining cash cost_basis")
 
 
 def to_money(value):
@@ -72,15 +80,6 @@ def get_holdings_with_details(user_id):
         return cur.fetchall()
 
 
-def remove_holding(user_id, symbol):
-    with cursor(commit=True) as cur:
-        cur.execute(
-            "DELETE FROM portfolio WHERE user_id = %s AND symbol = %s",
-            (user_id, symbol),
-        )
-        return cur.rowcount > 0
-
-
 def record_purchase(user_id, symbol, company_name, price, shares):
     """Buy shares and pay for them, as one indivisible operation.
 
@@ -141,6 +140,11 @@ def record_purchase(user_id, symbol, company_name, price, shares):
             (user_id, symbol, shares, price),
         )
         total_shares, average_cost = cur.fetchone()
+
+        # Same cursor, so the same transaction: the ledger entry and the
+        # money it describes commit together or not at all.
+        trades.record(cur, user_id, symbol, "buy", shares, price, cost)
+
         return total_shares, average_cost, remaining_cash
 
 
@@ -152,14 +156,15 @@ def record_sale(user_id, symbol, price, shares_to_sell):
     than overselling. Cash is credited in the same transaction that removes
     the shares.
 
-    Returns (sold, remaining_shares, new_cash), or (0, None, None) if the
-    sale was not valid.
+    Returns a SaleResult, or SaleResult(0, None, None, None) if the sale
+    was not valid.
     """
+    nothing = SaleResult(0, None, None, None)
     if shares_to_sell is None:
-        return (0, None, None)
+        return nothing
     shares_to_sell = Decimal(shares_to_sell)
     if not shares_to_sell.is_finite() or shares_to_sell <= 0:
-        return (0, None, None)
+        return nothing
 
     price = Decimal(price)
     proceeds = to_money(shares_to_sell * price)
@@ -167,7 +172,7 @@ def record_sale(user_id, symbol, price, shares_to_sell):
     with cursor(commit=True) as cur:
         cur.execute(
             """
-            SELECT id, shares FROM portfolio
+            SELECT id, shares, purchase_price FROM portfolio
             WHERE user_id = %s AND symbol = %s
             FOR UPDATE
             """,
@@ -175,11 +180,11 @@ def record_sale(user_id, symbol, price, shares_to_sell):
         )
         row = cur.fetchone()
         if row is None:
-            return (0, None, None)
+            return nothing
 
-        holding_id, current_shares = row
+        holding_id, current_shares, cost_basis = row
         if shares_to_sell > current_shares:
-            return (0, None, None)
+            return nothing
 
         remaining = current_shares - shares_to_sell
         if remaining == 0:
@@ -196,4 +201,10 @@ def record_sale(user_id, symbol, price, shares_to_sell):
         )
         new_cash = cur.fetchone()[0]
 
-        return (shares_to_sell, remaining, new_cash)
+        # The cost basis recorded here is the one that was locked above, so
+        # the realized gain on this row is settled by the same transaction
+        # that moved the shares and the cash.
+        trades.record(cur, user_id, symbol, "sell", shares_to_sell, price,
+                      proceeds, cost_basis=cost_basis)
+
+        return SaleResult(shares_to_sell, remaining, new_cash, cost_basis)

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_delta.html" import delta %}
+{% from "_trades.html" import activity_row %}
 {% set active = 'portfolio' %}
 {% block title %}Portfolio · Portfolio Tracker{% endblock %}
 
@@ -81,6 +82,11 @@
                         <th scope="col" class="r" data-sort="number">Price</th>
                         <th scope="col" class="r" data-sort="number">Value</th>
                         <th scope="col" class="r" data-sort="number">Gain or loss</th>
+                        {# Only worth a column once something has actually been
+                           sold; until then it would be a row of dashes. #}
+                        {% if summary.realized.by_symbol %}
+                            <th scope="col" class="r" data-sort="number">Realized</th>
+                        {% endif %}
                     </tr>
                     </thead>
                     <tbody class="stagger">
@@ -101,6 +107,15 @@
                             <td class="r" data-label="Gain or loss" data-value="{{ row.gain_loss or 0 }}">
                                 {{ delta(row.gain_loss, row.percent) }}
                             </td>
+                            {% if summary.realized.by_symbol %}
+                                <td class="r" data-label="Realized" data-value="{{ row.realized or 0 }}">
+                                    {% if row.realized is none %}
+                                        <span class="faint">—</span>
+                                    {% else %}
+                                        {{ delta(row.realized) }}
+                                    {% endif %}
+                                </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                     </tbody>
@@ -143,6 +158,24 @@
             </ul>
         </div>
     </div>
+
+    {% if summary.activity %}
+        <div class="panel reveal">
+            <div class="panel-head panel-head-row">
+                <div>
+                    <h2>Recent activity</h2>
+                    <p class="faint">Your last {{ summary.activity | length }}
+                        {{ 'trade' if summary.activity | length == 1 else 'trades' }}</p>
+                </div>
+                <a class="btn btn-quiet btn-sm" href="{{ url_for('trades_view') }}">See all activity</a>
+            </div>
+            <ul class="activity">
+                {% for row in summary.activity %}
+                    {{ activity_row(row) }}
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
 
     <div class="glossary reveal">
         <h3>In plain words</h3>

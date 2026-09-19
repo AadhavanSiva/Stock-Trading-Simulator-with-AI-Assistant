@@ -8,6 +8,7 @@ call one of those, and render the result — the same way cli.py does.
 
 Run it with:  python -m flask --app web run
 """
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -128,7 +129,7 @@ def finish_login(user_id, message):
     return redirect(destination)
 
 
-def _entry_page(template, motion="lively"):
+def _entry_page(template, motion="lively", **extra):
     """Render one of the signed-out doors (landing, sign up, log in)."""
     return render_template(
         template,
@@ -137,6 +138,7 @@ def _entry_page(template, motion="lively"):
         dev_login=config.ALLOW_DEV_LOGIN,
         redirect_uri=url_for("auth_callback", _external=True),
         starting_cash=users.starting_cash(),
+        **extra,
     )
 
 
@@ -302,6 +304,23 @@ def long_date(value):
     if value is None:
         return ""
     return f"{value:%b} {value.day}, {value.year}"
+
+
+@app.template_filter("long_datetime")
+def long_datetime(value):
+    """Mar 12, 2026 at 2:05 PM — a trade needs its time, not just its day.
+
+    Rendered in the viewer's local zone by app.js where JavaScript runs;
+    this is the server-side fallback, and it states UTC rather than
+    implying a local time it cannot know.
+    """
+    if value is None:
+        return ""
+    moment = value.astimezone(timezone.utc)
+    hour = moment.hour % 12 or 12
+    meridiem = "AM" if moment.hour < 12 else "PM"
+    return (f"{moment:%b} {moment.day}, {moment.year} at "
+            f"{hour}:{moment:%M} {meridiem} UTC")
 
 
 @app.template_filter("percent")
@@ -814,6 +833,87 @@ def history_view():
         })
 
     return render_template("history.html", rows=rows, days=30)
+
+
+# ----------------------------------------------------------------- trades
+
+@app.route("/trades")
+@login_required
+def trades_view():
+    """The full trade history, newest first, a page at a time."""
+    return render_template(
+        "trades.html",
+        motion="calm",
+        log=operations.trade_history(g.user_id, page=request.args.get("page", 1)),
+        realized=operations.realized_summary(g.user_id),
+    )
+
+
+# ---------------------------------------------------------------- account
+
+@app.route("/account")
+@login_required
+def account():
+    """Where the account itself is managed: taking the data out, or ending it."""
+    return render_template(
+        "account.html",
+        motion="calm",
+        trade_count=operations.trade_history(g.user_id, page=1, page_size=1).total,
+        confirmation=operations.DELETE_CONFIRMATION,
+    )
+
+
+@app.route("/account/export")
+@login_required
+def account_export():
+    """The account's own data as a JSON file.
+
+    A download rather than a page: this is a file to keep, and rendering it
+    inline would leave the whole trade history in the browser's history.
+    """
+    payload = operations.export_account(g.user_id)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    response = app.response_class(
+        json.dumps(payload, indent=2) + "\n",
+        mimetype="application/json",
+    )
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="portfolio-tracker-export-{stamp}.json"'
+    )
+    # Someone's holdings and trades: never cached by a proxy along the way.
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/account/delete", methods=["POST"])
+@login_required
+def account_delete():
+    """Erase the account, once the confirmation has been typed out.
+
+    operations.delete_account re-checks the typed word, so the guard does
+    not depend on this form being the only way in.
+    """
+    user_id = g.user_id
+    try:
+        email = operations.delete_account(user_id, request.form.get("confirmation"))
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account"))
+
+    session.clear()
+    # Survives the clear above so the confirmation page can name the
+    # account that is gone. Popped as soon as it is shown.
+    session["deleted_account"] = email
+    return redirect(url_for("account_deleted"))
+
+
+@app.route("/account/deleted")
+def account_deleted():
+    """Shown once, to the person who just deleted their account."""
+    email = session.pop("deleted_account", None)
+    if email is None:
+        return redirect(url_for("index"))
+    return _entry_page("account_deleted.html", deleted_email=email)
 
 
 # ---------------------------------------------------------------- actions

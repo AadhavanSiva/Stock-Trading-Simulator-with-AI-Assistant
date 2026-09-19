@@ -15,13 +15,16 @@ services/ respectively.
 """
 import logging
 from collections import namedtuple
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from portfolio_tracker import charts
 from portfolio_tracker.errors import (
     InsufficientFunds, MarketDataUnavailable, UnknownUser, ValidationError,
 )
-from portfolio_tracker.models import assistant_usage, history, portfolio, stocks, users
+from portfolio_tracker.models import (
+    assistant_usage, history, portfolio, stocks, trades, users,
+)
 from portfolio_tracker.models.portfolio import to_money
 from portfolio_tracker.services import market_data
 
@@ -31,11 +34,17 @@ log = logging.getLogger(__name__)
 # decimal places is the granularity we quote and accept.
 SHARE_PRECISION = Decimal("0.0001")
 
+# What someone has to type out before their account is erased. A button
+# alone is one mis-click from irreversible; typing the word takes a
+# deliberate act that a stray click cannot produce.
+DELETE_CONFIRMATION = "DELETE"
+
 __all__ = [
     "ValidationError", "InsufficientFunds", "UnknownUser",
     "format_shares", "sellable_maximum", "affordable_maximum", "parse_quantity",
     "look_up", "buy", "sell", "refresh_prices", "load_all_history",
     "account_summary", "assistant_wait_seconds",
+    "recent_activity", "trade_history", "export_account", "delete_account",
 ]
 
 
@@ -72,8 +81,19 @@ Quote = namedtuple(
 )
 Summary = namedtuple(
     "Summary",
-    "rows unpriced cash holdings_value total_cost total_gain total_percent net_worth",
+    "rows unpriced cash holdings_value total_cost total_gain total_percent net_worth "
+    "realized activity",
 )
+TradeRow = namedtuple(
+    "TradeRow",
+    "id symbol company_name side shares price total_value cost_basis gain "
+    "opening traded_at",
+)
+TradePage = namedtuple("TradePage", "rows page pages total page_size")
+# Gains that have actually been banked, as opposed to the paper gain on a
+# position still open. `closed` covers tickers the account has sold out of
+# entirely — they have a realized result but no holding left to show it on.
+Realized = namedtuple("Realized", "total by_symbol closed")
 
 
 def format_shares(value):
@@ -203,7 +223,7 @@ def sell(user_id, symbol, shares):
     if held is None:
         raise ValidationError(f"You do not own any {symbol}.")
 
-    owned, cost_basis = held
+    owned = held[0]
     shares = parse_quantity(shares, maximum=owned)
 
     try:
@@ -213,21 +233,24 @@ def sell(user_id, symbol, shares):
     if price is None:
         raise ValidationError(f"No current price for {symbol}. Nothing was sold.")
 
-    sold, remaining, cash = portfolio.record_sale(user_id, symbol, price, shares)
-    if not sold:
+    result = portfolio.record_sale(user_id, symbol, price, shares)
+    if not result.sold:
         raise ValidationError(
             "That sale is no longer valid — your position may have changed."
         )
 
     return Sale(
         symbol=symbol,
-        shares=sold,
+        shares=result.sold,
         price=price,
-        proceeds=to_money(sold * price),
-        gain=to_money((price - cost_basis) * sold),
-        remaining=remaining,
-        closed=remaining == 0,
-        cash=cash,
+        proceeds=to_money(result.sold * price),
+        # From the basis the sale itself locked, not the one read before the
+        # transaction started: a buy landing in between would change the
+        # average, and the figure reported here has to be the one recorded.
+        gain=to_money((price - result.cost_basis) * result.sold),
+        remaining=result.remaining,
+        closed=result.remaining == 0,
+        cash=result.cash,
     )
 
 
@@ -268,6 +291,15 @@ def account_summary(user_id):
             priced_cost += cost
         rows.append(row)
 
+    # Realized gain is read from the trade log, which is the only place it
+    # exists: a position's own row remembers what it cost, not what earlier
+    # sales of it returned. Attaching it per row lets a holding show both
+    # halves of its result — what it has banked and what it is still
+    # carrying — which a single "gain" figure cannot.
+    realized = realized_summary(user_id, held_symbols=[row["symbol"] for row in rows])
+    for row in rows:
+        row["realized"] = realized.by_symbol.get(row["symbol"])
+
     cash = users.get_cash(user_id) or Decimal(0)
     total_gain = holdings_value - priced_cost
     return Summary(
@@ -279,6 +311,86 @@ def account_summary(user_id):
         total_gain=total_gain,
         total_percent=(total_gain / priced_cost * 100) if priced_cost else Decimal(0),
         net_worth=cash + holdings_value,
+        realized=realized,
+        activity=recent_activity(user_id),
+    )
+
+
+def realized_summary(user_id, held_symbols=None):
+    """What the account has actually banked, per ticker and in total.
+
+    A ticker sold out of entirely still has a realized result but no
+    holding left to hang it on, so those are separated into `closed` for
+    the views to list on their own.
+    """
+    rows = trades.realized_by_symbol(user_id)
+    if held_symbols is None:
+        held_symbols = portfolio.get_portfolio_symbols(user_id)
+    held = set(held_symbols)
+
+    return Realized(
+        total=sum((gain for gain, _, _ in rows.values()), Decimal(0)),
+        by_symbol={symbol: gain for symbol, (gain, _, _) in rows.items()},
+        closed=[
+            {"symbol": symbol, "realized": gain,
+             "proceeds": proceeds, "shares_sold": sold}
+            for symbol, (gain, proceeds, sold) in rows.items()
+            if symbol not in held
+        ],
+    )
+
+
+# ------------------------------------------------------------ the ledger
+
+def _trade_row(row):
+    """One database row as the namedtuple the views render."""
+    (trade_id, symbol, company_name, side, shares, price, total_value,
+     cost_basis, backfilled, traded_at) = row
+    return TradeRow(
+        id=trade_id,
+        symbol=symbol,
+        company_name=company_name or symbol,
+        side=side,
+        shares=shares,
+        price=price,
+        total_value=total_value,
+        cost_basis=cost_basis,
+        # Only a sale settles a gain, so a buy's is None rather than zero —
+        # zero would read as "broke even", which is a different claim.
+        gain=to_money((price - cost_basis) * shares) if cost_basis is not None else None,
+        opening=backfilled,
+        traded_at=traded_at,
+    )
+
+
+def recent_activity(user_id, limit=5):
+    """The last few trades, for the portfolio page."""
+    return [_trade_row(row) for row in trades.recent(user_id, limit=limit)]
+
+
+def trade_history(user_id, page=1, page_size=trades.PAGE_SIZE):
+    """One page of the full trade history, newest first.
+
+    Out-of-range pages clamp to the last real page rather than returning
+    nothing, so a stale link or a hand-edited ?page= shows the end of the
+    history instead of an empty table.
+    """
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        page = 1
+
+    total = trades.count(user_id)
+    pages = max(1, -(-total // page_size))   # ceiling division
+    page = min(max(1, page), pages)
+
+    rows = trades.page(user_id, page_number=page, page_size=page_size)
+    return TradePage(
+        rows=[_trade_row(row) for row in rows],
+        page=page,
+        pages=pages,
+        total=total,
+        page_size=page_size,
     )
 
 
@@ -458,3 +570,108 @@ def assistant_context(user_id, symbol=None):
 
     return "\n".join(lines)
 
+
+
+# --------------------------------------------------- export and erasure
+
+def _plain(value):
+    """A value json.dumps can serialize, without losing exactness.
+
+    Decimals become strings rather than floats: a cost basis of 164.20 must
+    survive the round trip as 164.20, and float() would hand back
+    164.19999999999999. Timestamps become ISO-8601, which is unambiguous
+    about the offset in a way a local-time string is not.
+    """
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def export_account(user_id):
+    """Everything the account holds, as a JSON-ready dict.
+
+    This is the person's own data and nothing else: their profile, their
+    cash, their positions and their full trade history. Shared market data
+    is deliberately left out — price history is not theirs to take, and
+    including it would bury the part that is.
+    """
+    account = users.get_by_id(user_id)
+    if account is None:
+        raise UnknownUser(f"No account with id {user_id}.")
+
+    _, google_sub, email, display_name, cash = account
+    summary = account_summary(user_id)
+    log = trade_history(user_id, page=1, page_size=trades.count(user_id) or 1)
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "format_version": 1,
+        "account": {
+            "email": email,
+            "display_name": display_name,
+            "google_sub": google_sub,
+            "cash": _plain(cash),
+        },
+        "holdings": [
+            {
+                "symbol": row["symbol"],
+                "company_name": row["company_name"],
+                "shares": _plain(row["shares"]),
+                "average_cost": _plain(row["purchase_price"]),
+                "current_price": _plain(row["current_price"]),
+                "market_value": _plain(row["value"]),
+                "unrealized_gain": _plain(row["gain_loss"]),
+                "realized_gain": _plain(row["realized"]),
+            }
+            for row in summary.rows
+        ],
+        "trades": [
+            {
+                "symbol": row.symbol,
+                "company_name": row.company_name,
+                "side": row.side,
+                "shares": _plain(row.shares),
+                "price": _plain(row.price),
+                "total_value": _plain(row.total_value),
+                "cost_basis": _plain(row.cost_basis),
+                "realized_gain": _plain(row.gain),
+                # Flagged so a reader is not misled into treating a
+                # reconstructed opening position as a real recorded trade.
+                "opening_position": row.opening,
+                "traded_at": _plain(row.traded_at),
+            }
+            for row in log.rows
+        ],
+        "totals": {
+            "cash": _plain(summary.cash),
+            "holdings_value": _plain(summary.holdings_value),
+            "net_worth": _plain(summary.net_worth),
+            "unrealized_gain": _plain(summary.total_gain),
+            "realized_gain": _plain(summary.realized.total),
+        },
+    }
+
+
+def delete_account(user_id, confirmation):
+    """Permanently erase an account, once the person has typed the words.
+
+    The typed confirmation is required by the caller's own UI, but it is
+    re-checked here so the rule does not live only in a template: any front
+    end that grows a delete button gets the same guard. Comparison ignores
+    surrounding space and case, which are not what we are testing for.
+
+    Returns the deleted account's email.
+    """
+    if (confirmation or "").strip().lower() != DELETE_CONFIRMATION.lower():
+        raise ValidationError(
+            f'Type "{DELETE_CONFIRMATION}" exactly to confirm that you want '
+            f"to delete your account. Nothing has been deleted."
+        )
+
+    email = users.delete_account(user_id)
+    if email is None:
+        raise UnknownUser("That account no longer exists.")
+    log.info("Account %s deleted at the owner's request", user_id)
+    return email

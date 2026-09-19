@@ -151,8 +151,8 @@ def test_database():
         port=config.DB_PORT,
     )
     with conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS assistant_requests, price_intraday, price_history, "
-                    "portfolio, stocks, users CASCADE")
+        cur.execute("DROP TABLE IF EXISTS trades, assistant_requests, price_intraday, "
+                    "price_history, portfolio, stocks, users CASCADE")
         with open(SCHEMA_PATH, encoding="utf-8") as fh:
             cur.execute(fh.read())
     conn.commit()
@@ -170,8 +170,10 @@ def db(test_database):
 
     with cursor(commit=True) as cur:
         cur.execute(
-            "TRUNCATE assistant_requests, price_intraday, price_history, portfolio, stocks, users "
-            "RESTART IDENTITY CASCADE"
+            # TRUNCATE does not fire row-level triggers, so the append-only guard
+            # on `trades` does not stand in the way of resetting between tests.
+            "TRUNCATE trades, assistant_requests, price_intraday, price_history, "
+            "portfolio, stocks, users RESTART IDENTITY CASCADE"
         )
     return test_database
 

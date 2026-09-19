@@ -52,6 +52,24 @@
 
     document.addEventListener("DOMContentLoaded", function () {
 
+        /* ------------------------------------------------- trade times
+         * The server renders each trade time in UTC, because it cannot
+         * know the reader's zone. Where JavaScript runs we restate it in
+         * theirs — a trade you made is easier to recognise by the hour it
+         * felt like than by the hour it was recorded. The UTC text stays
+         * put if anything here fails, so nothing is ever left blank.
+         */
+        each("[data-utc]", function (el) {
+            var when = new Date(el.getAttribute("data-utc"));
+            if (isNaN(when)) return;
+            try {
+                el.textContent = when.toLocaleString(undefined, {
+                    month: "short", day: "numeric", year: "numeric",
+                    hour: "numeric", minute: "2-digit"
+                });
+            } catch (e) { /* keep the server's UTC rendering */ }
+        });
+
         /* -------------------------------------------------- busy buttons
          * A form that hits the network must never look frozen. The button
          * keeps its width so the layout does not jump.
