@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sign out · Portfolio Tracker{% endblock %}
+
+{# Reached from an old link or bookmark to /logout. Signing out only happens
+   on the POST below, so another site cannot sign anyone out with a link. #}
+{% block content %}
+<div class="gate">
+    <div class="panel">
+        <div class="gate-head">
+            <h1>Sign out?</h1>
+            <p>You'll need to sign in with Google again to get back to your portfolio.</p>
+        </div>
+        <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">Sign out</button>
+        </form>
+        <p class="gate-alt"><a href="{{ url_for('index') }}">Stay signed in</a></p>
+    </div>
+</div>
+{% endblock %}

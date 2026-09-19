@@ -397,6 +397,13 @@ class TestStockPage:
 
 
 class TestFetch:
+    @pytest.fixture(autouse=True)
+    def priced(self):
+        """A fetch prices the stock before downloading anything. Answer
+        that lookup here; these tests used to reach the real Yahoo."""
+        with quote("100"):
+            yield
+
     def test_daily_fetch_backfills_everything(self, client):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         with patch.object(history, "load_history_for_symbol", return_value=250) as load:
@@ -416,13 +423,18 @@ class TestFetch:
             client.post("/stock/AAPL/fetch", data={"range": window})
         load.assert_called_once_with("AAPL", period, interval)
 
-    def test_a_failed_fetch_is_reported_not_crashed(self, client):
+    def test_a_failed_fetch_is_reported_not_crashed(self, client, caplog):
+        """Reported in words a person can act on. The exception's own text
+        is logged, never shown."""
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         with patch.object(history, "load_history_for_symbol",
                           side_effect=RuntimeError("rate limited")):
             response = client.post("/stock/AAPL/fetch", data={"range": "1y"},
                                    follow_redirects=True)
-        assert "Could not fetch prices for AAPL: rate limited" in text(response)
+        body = text(response)
+        assert "Could not fetch prices for AAPL." in body
+        assert "rate limited" not in body
+        assert "rate limited" in caplog.text
 
     def test_fetching_a_stock_you_have_never_bought_works(self, client):
         """Regression: price_history references stocks(symbol), and a company

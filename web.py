@@ -8,9 +8,8 @@ call one of those, and render the result — the same way cli.py does.
 
 Run it with:  python -m flask --app web run
 """
-import threading
-import time
-from collections import defaultdict, deque
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -19,14 +18,34 @@ from authlib.integrations.flask_client import OAuth
 from flask import (
     Flask, abort, flash, g, redirect, render_template, request, session, url_for,
 )
+from flask_wtf.csrf import CSRFError, CSRFProtect
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from portfolio_tracker import charts, config, operations
-from portfolio_tracker.errors import InsufficientFunds, ValidationError
+from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
 from portfolio_tracker.models import history, portfolio, stocks, users
 from portfolio_tracker.services import assistant
 
+log = logging.getLogger(__name__)
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = config.SECRET_KEY
+# Required unless this is a debug run: `flask run --debug` (FLASK_DEBUG=1,
+# which Flask reads into app.debug) or `python web.py`, which runs in debug.
+app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or __name__ == "__main__")
+
+# Every POST, including the JSON Ask endpoint, must carry a CSRF token tied
+# to the session: a hidden field in forms, an X-CSRFToken header from
+# app.js. The token lasts as long as the session rather than an hour, so a
+# page left open is not refused on its next click.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
+csrf = CSRFProtect(app)
+
+# Behind a hosting proxy the request reaches Flask as plain http from the
+# proxy. Trusting its one hop of X-Forwarded-* headers is what makes
+# url_for(_external=True) produce the https:// callback Google expects.
+if config.BEHIND_HTTPS_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config["SESSION_COOKIE_SECURE"] = True
 
 oauth = OAuth(app)
 if config.google_configured():
@@ -110,7 +129,7 @@ def finish_login(user_id, message):
     return redirect(destination)
 
 
-def _entry_page(template, motion="lively"):
+def _entry_page(template, motion="lively", **extra):
     """Render one of the signed-out doors (landing, sign up, log in)."""
     return render_template(
         template,
@@ -119,6 +138,7 @@ def _entry_page(template, motion="lively"):
         dev_login=config.ALLOW_DEV_LOGIN,
         redirect_uri=url_for("auth_callback", _external=True),
         starting_cash=users.starting_cash(),
+        **extra,
     )
 
 
@@ -163,8 +183,11 @@ def auth_callback():
 
     try:
         token = oauth.google.authorize_access_token()
-    except Exception as exc:
-        flash(f"Google sign-in failed: {exc}", "error")
+    except Exception:
+        # Usually an expired or replayed sign-in attempt. The details are
+        # for the log, not the page.
+        log.warning("Google sign-in callback failed", exc_info=True)
+        flash("Google sign-in failed. Please try signing in again.", "error")
         return redirect(url_for("login"))
 
     claims = token.get("userinfo") or {}
@@ -204,12 +227,23 @@ def login_dev():
         flash("Enter an email address to sign in with.", "error")
         return redirect(url_for("login"))
 
-    account = users.upsert_from_google(f"dev:{email}", email, email.split("@")[0])
+    # Reuses an existing account at that address rather than minting a
+    # second one beside it; see users.dev_account.
+    account = users.dev_account(email)
     return finish_login(account[0], f"Signed in locally as {email}.")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["GET", "POST"])
 def logout():
+    """Sign out. Only a POST with a valid CSRF token does it.
+
+    A GET would let any other site sign you out with an <img> tag, so an
+    old link or bookmark to /logout gets a page with the button instead.
+    """
+    if request.method == "GET":
+        if not session.get("user_id"):
+            return redirect(url_for("login"))
+        return render_template("signout.html", motion="calm")
     session.clear()
     flash("You have been signed out.", "notice")
     return redirect(url_for("login"))
@@ -272,6 +306,23 @@ def long_date(value):
     if value is None:
         return ""
     return f"{value:%b} {value.day}, {value.year}"
+
+
+@app.template_filter("long_datetime")
+def long_datetime(value):
+    """Mar 12, 2026 at 2:05 PM — a trade needs its time, not just its day.
+
+    Rendered in the viewer's local zone by app.js where JavaScript runs;
+    this is the server-side fallback, and it states UTC rather than
+    implying a local time it cannot know.
+    """
+    if value is None:
+        return ""
+    moment = value.astimezone(timezone.utc)
+    hour = moment.hour % 12 or 12
+    meridiem = "AM" if moment.hour < 12 else "PM"
+    return (f"{moment:%b} {moment.day}, {moment.year} at "
+            f"{hour}:{moment:%M} {meridiem} UTC")
 
 
 @app.template_filter("percent")
@@ -509,8 +560,15 @@ def stock_fetch(symbol):
             # complete; already-stored days are skipped, not duplicated.
             added = history.load_full_history_for_symbol(symbol)
             noun = "days"
-    except Exception as exc:
-        flash(f"Could not fetch prices for {symbol}: {exc}", "error")
+    except MarketDataUnavailable:
+        # Already logged by market_data, with the real error.
+        flash(f"Could not fetch prices for {symbol}. Yahoo Finance didn't respond, "
+              "so try again in a minute.", "error")
+        return redirect(url_for("stock_detail", symbol=symbol, range=window))
+    except Exception:
+        log.exception("Fetching %s prices for %s failed", window, symbol)
+        flash(f"Could not fetch prices for {symbol}. Something went wrong on our "
+              "side; try again later.", "error")
         return redirect(url_for("stock_detail", symbol=symbol, range=window))
 
     flash(f"Fetched {added} new {noun} for {symbol}.", "success")
@@ -520,34 +578,15 @@ def stock_fetch(symbol):
 # ------------------------------------------------------------ assistant
 
 # Each question is a paid API call, so one account cannot fire them without
-# limit. Per-process and in memory: enough for a local single-server app,
-# and it resets on restart.
+# limit. Counted in the database (see operations.assistant_wait_seconds), so
+# the limit survives restarts and holds across every worker process.
 ASSISTANT_LIMIT = 20
 ASSISTANT_WINDOW = 600  # seconds
-_asked = defaultdict(deque)
-_asked_lock = threading.Lock()
-
-
-def _seconds_until_allowed(user_id):
-    """Record a question and return 0, or return how long until one is allowed."""
-    now = time.monotonic()
-    with _asked_lock:
-        recent = _asked[user_id]
-        while recent and now - recent[0] > ASSISTANT_WINDOW:
-            recent.popleft()
-        if len(recent) >= ASSISTANT_LIMIT:
-            return max(1, int(ASSISTANT_WINDOW - (now - recent[0])) + 1)
-        recent.append(now)
-        return 0
-
-
-def _within_assistant_limit(user_id):
-    return _seconds_until_allowed(user_id) == 0
 
 
 def _answer_question(question, symbol, earlier=()):
     """Shared by the drawer and the no-JavaScript page."""
-    wait = _seconds_until_allowed(g.user_id)
+    wait = operations.assistant_wait_seconds(g.user_id, ASSISTANT_LIMIT, ASSISTANT_WINDOW)
     if wait:
         return assistant.Answer(
             False, "", "busy",
@@ -798,6 +837,87 @@ def history_view():
     return render_template("history.html", rows=rows, days=30)
 
 
+# ----------------------------------------------------------------- trades
+
+@app.route("/trades")
+@login_required
+def trades_view():
+    """The full trade history, newest first, a page at a time."""
+    return render_template(
+        "trades.html",
+        motion="calm",
+        log=operations.trade_history(g.user_id, page=request.args.get("page", 1)),
+        realized=operations.realized_summary(g.user_id),
+    )
+
+
+# ---------------------------------------------------------------- account
+
+@app.route("/account")
+@login_required
+def account():
+    """Where the account itself is managed: taking the data out, or ending it."""
+    return render_template(
+        "account.html",
+        motion="calm",
+        trade_count=operations.trade_history(g.user_id, page=1, page_size=1).total,
+        confirmation=operations.DELETE_CONFIRMATION,
+    )
+
+
+@app.route("/account/export")
+@login_required
+def account_export():
+    """The account's own data as a JSON file.
+
+    A download rather than a page: this is a file to keep, and rendering it
+    inline would leave the whole trade history in the browser's history.
+    """
+    payload = operations.export_account(g.user_id)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    response = app.response_class(
+        json.dumps(payload, indent=2) + "\n",
+        mimetype="application/json",
+    )
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="portfolio-tracker-export-{stamp}.json"'
+    )
+    # Someone's holdings and trades: never cached by a proxy along the way.
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/account/delete", methods=["POST"])
+@login_required
+def account_delete():
+    """Erase the account, once the confirmation has been typed out.
+
+    operations.delete_account re-checks the typed word, so the guard does
+    not depend on this form being the only way in.
+    """
+    user_id = g.user_id
+    try:
+        email = operations.delete_account(user_id, request.form.get("confirmation"))
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account"))
+
+    session.clear()
+    # Survives the clear above so the confirmation page can name the
+    # account that is gone. Popped as soon as it is shown.
+    session["deleted_account"] = email
+    return redirect(url_for("account_deleted"))
+
+
+@app.route("/account/deleted")
+def account_deleted():
+    """Shown once, to the person who just deleted their account."""
+    email = session.pop("deleted_account", None)
+    if email is None:
+        return redirect(url_for("index"))
+    return _entry_page("account_deleted.html", deleted_email=email)
+
+
 # ---------------------------------------------------------------- actions
 
 @app.route("/actions")
@@ -838,12 +958,17 @@ def load_history():
         flash("You have no holdings yet, so there was no history to load.", "notice")
         return redirect(url_for("actions"))
 
-    flash(
+    failed = sum(1 for outcome in report.outcomes if not outcome.ok)
+    message = (
         f"Checked {report.total} {'holding' if report.total == 1 else 'holdings'} "
         f"and stored {report.new_rows} new "
-        f"{'day' if report.new_rows == 1 else 'days'} of prices.",
-        "success",
+        f"{'day' if report.new_rows == 1 else 'days'} of prices."
     )
+    if failed:
+        # An outage must read as one, not as "nothing new to store".
+        message += (f" {failed} could not be downloaded, so "
+                    f"{'it was' if failed == 1 else 'they were'} not checked.")
+    flash(message, "error" if failed == report.total else ("notice" if failed else "success"))
     return render_template(
         "actions.html",
         holdings=portfolio.get_portfolio_symbols(g.user_id),
@@ -852,11 +977,48 @@ def load_history():
     )
 
 
+def _wants_json():
+    return request.path.startswith("/api/")
+
+
 @app.errorhandler(404)
 def not_found(_):
     return render_template("error.html",
                            code=404,
                            message="That page does not exist."), 404
+
+
+@app.errorhandler(CSRFError)
+def csrf_failed(error):
+    """A state-changing request without a valid token.
+
+    Most often an honest one: a page left open across a sign-out or a
+    server restart. Say how to recover rather than just "400".
+    """
+    log.info("CSRF check failed for %s %s: %s", request.method, request.path, error.description)
+    message = ("This page has expired, so that wasn't sent. Reload the page "
+               "and try again.")
+    if _wants_json():
+        return {"ok": False, "kind": "expired", "message": message}, 400
+    return render_template("error.html", code=400, title="This page has expired",
+                           message=message), 400
+
+
+@app.errorhandler(500)
+def server_error(error):
+    """Anything unhandled. Flask has already logged the traceback.
+
+    Neither the exception nor its text is shown: it can expose internals
+    and gives a reader nothing to act on. In debug mode Flask shows its
+    debugger instead and this handler does not run.
+    """
+    message = ("Something went wrong on our side. The error has been logged. "
+               "Try again in a minute.")
+    if _wants_json():
+        return {"ok": False, "kind": "failed", "message": message}, 500
+    return render_template("error.html", code=500, title="Something went wrong",
+                           message=message,
+                           retry_url=request.full_path if request.method == "GET" else None), 500
 
 
 if __name__ == "__main__":

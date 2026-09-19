@@ -1,5 +1,7 @@
 # Stock Trading Simulator with AI Assistant
 
+[![Tests](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml)
+
 A Python + PostgreSQL paper-trading app: buy and sell real stocks at live market prices with practice money, then ask an AI research assistant about any stock or your own portfolio. Built as a hands-on project to practice relational database design, API integration, and secure data handling.
 
 It has two front ends — a terminal menu and a Flask web interface — sharing one set of models and one operations layer, so both behave identically. Accounts sign in with Google, and each one gets a $50,000 practice cash balance to trade with. The web app adds stock pages with 1D-to-all-time price charts and Ask, an assistant powered by Google's Gemini that is grounded in the app's own data and can research stocks with Google Search.
@@ -19,6 +21,11 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - Google sign-in (OpenID Connect via Authlib); accounts are keyed on Google's stable `sub` claim, not the email
 - Per-account cash balance: buys debit it, sells credit it, and a purchase that exceeds it is refused inside the database transaction
 - Every holding is scoped to its owner, enforced by a `UNIQUE (user_id, symbol)` constraint rather than by convention
+- An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
+- Realized gain per position and overall, computed from that log, kept distinct from the unrealized gain on what is still held
+- "Recent activity" on the portfolio page and a full, paged trade history
+- Account deletion that actually deletes: one transaction, a typed confirmation, and no orphaned rows left behind
+- A JSON export of an account's own data — profile, holdings and full trade history
 
 ## Tech Stack
 
@@ -37,9 +44,10 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - `users` — one row per account: Google's `sub` claim, email, display name, and cash balance
 - `stocks` — reference data per ticker (symbol, company name, latest price), shared by all accounts
 - `portfolio` — holdings (owner, symbol, shares, purchase price). `UNIQUE (user_id, symbol)`: one row per ticker *per account*, so a repeat buy blends into a weighted-average cost basis rather than opening a second lot. The `user_id` in that constraint is load-bearing — a bare `UNIQUE (symbol)` would collide across accounts and hand one person another person's position.
-- `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run
+- `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run. `symbol` is `NOT NULL`, which that constraint depends on: PostgreSQL treats NULLs as distinct in a `UNIQUE`, so a nullable column there would let the same day be re-inserted forever and quietly undo the re-run guarantee.
+- `trades` — every buy and sell: owner, symbol, side, shares, price per share, total value, and when. **Append-only, enforced by the database.** A `BEFORE UPDATE OR DELETE` trigger refuses to rewrite a row, so the ledger cannot drift from what actually happened — a correction is a new row, never an edit. Each row is written inside the same transaction that moves the cash and the shares, so the log and the balances can never disagree. Sells also record the weighted-average `cost_basis` they were priced against, captured while the holding is locked, which is what makes realized gain a plain `SUM` rather than a replay of every prior buy.
 
-Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.)
+Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.) This holds for the OHLC columns too, which had no such guard until migration 007: a single NaN close would have made `MAX(close)` return NaN and turned every high on the history page into NaN, with nothing on screen to say where it came from.
 
 ## Architecture
 
@@ -51,6 +59,7 @@ portfolio_tracker/
         stocks.py          ticker reference data
         portfolio.py       holdings
         history.py         daily OHLCV
+        trades.py          the append-only trade log
         users.py           accounts and cash balances
     services/
         market_data.py     the only module that talks to yfinance
@@ -242,7 +251,15 @@ while you are filling one in.
    PORTFOLIO_USER=you@gmail.com
    ```
 
-   Optionally override `DB_HOST`, `DB_NAME`, `DB_USER`, or `DB_PORT` — they default to `localhost`, `practice`, `postgres`, and `5432`. `STARTING_CASH` defaults to `50000`, and `FLASK_SECRET_KEY` keeps flash messages working across restarts.
+   Optionally override `DB_HOST`, `DB_NAME`, `DB_USER`, or `DB_PORT` — they default to `localhost`, `practice`, `postgres`, and `5432`. `STARTING_CASH` defaults to `50000`.
+
+   **`FLASK_SECRET_KEY` is required anywhere the app runs without debug mode.** It signs session cookies and CSRF tokens, and the app refuses to start without it rather than inventing a random key (which would sign everyone out on every restart and break sessions across worker processes). Generate one with:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+
+   and add `FLASK_SECRET_KEY=<that value>` to `.env`. Running locally with `python -m flask --app web run --debug` works without it: debug mode gets a throwaway key.
 
    `.env` is git-ignored, and nothing above is ever hardcoded — it all arrives through `config.py`.
 
@@ -279,6 +296,11 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    through the web app once first; if the setting is missing or does not
    match an account, the CLI lists the accounts it does know about.
 
+   Email addresses are not unique (see "Accounts and email" below), so if
+   two accounts share one the CLI refuses to guess and names them both.
+   Set `PORTFOLIO_USER_ID` to the account id to say which you mean; it
+   takes precedence over `PORTFOLIO_USER`.
+
    **Web:**
 
    ```bash
@@ -295,8 +317,49 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    `--app` needs Flask 2.2 or newer. The `python -m` form always uses the
    same interpreter as `python`, so it cannot drift.
 
-   Optionally set `FLASK_SECRET_KEY` in `.env` to keep flash messages working
-   across restarts; without it a random key is generated per process.
+   In debug mode `FLASK_SECRET_KEY` is optional; set it in `.env` to keep
+   sessions and flash messages working across restarts.
+
+## Deploying (Render + Neon, free tiers)
+
+The app runs on a [Render](https://render.com) free web service with a
+[Neon](https://neon.tech) free PostgreSQL database. `render.yaml` describes
+the service, so Render needs no hand-entered build settings.
+
+1. **Database.** Create a Neon project and copy its connection string
+   (Dashboard → Connect). The pooled one, with `-pooler` in the host name,
+   suits this app, which opens a short connection per query. It looks like
+   `postgresql://user:password@ep-xxx-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require`.
+2. **Service.** In Render: New → Blueprint, pick this repository, and fill in
+   the values it asks for: `DATABASE_URL` (the Neon string), `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` and `GEMINI_API_KEY`. `FLASK_SECRET_KEY` is generated
+   for you. Every build runs `python -m portfolio_tracker.init_db`, which
+   creates any missing tables, so a new database needs no manual step.
+3. **Google sign-in.** Once Render shows the service URL, add
+   `https://<your-service>.onrender.com/auth/callback` to the OAuth client's
+   Authorized redirect URIs. While the consent screen is in Testing, only
+   the test users listed there can sign in.
+
+What the Blueprint sets and why:
+
+- **Python 3.10.4**, as in CI. `pandas==2.0.3` has no wheels for 3.12+.
+- **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
+  HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
+  `ProxyFix`) to build `https://` links, and marks the session cookie
+  Secure. Never set it locally.
+- **`gunicorn web:app --workers 1 --threads 8 --timeout 150`.** One process
+  keeps the quote cache shared; the timeout outlasts the assistant's 120 s
+  limit.
+
+`DATABASE_URL` is passed to the driver whole, so `sslmode=require` applies.
+Locally, leave it unset and the `DB_*` settings are used as before; the
+tests ignore it, so they can never reach the hosted database.
+
+Expect a cold start of up to a minute after the free service has slept
+(15 minutes idle), and a brief pause while an idle Neon database wakes.
+Yahoo Finance also rate-limits some cloud IP ranges more readily than home
+connections; when that happens the app says prices could not be fetched
+rather than showing an error page.
 
 ## Upgrading an existing database
 
@@ -318,14 +381,104 @@ It creates `users`, gives `portfolio` a `user_id`, and swaps `UNIQUE (symbol)` f
 
 Both migrations are safe to re-run.
 
+Migrations 003 and 004 add intraday prices and the full-history marker (see "Stock pages and charts"). Migration 005 moves the assistant's rate limit into the database:
+
+```bash
+psql -U postgres -d practice -f migrations/005_assistant_rate_limit.sql
+```
+
+Migration 006 adds the trade log:
+
+```bash
+psql -U postgres -d practice -f migrations/006_trades.sql
+```
+
+It creates `trades`, installs the append-only trigger, and gives each
+existing holding one synthesized opening row at the weighted-average cost
+the position already carries. Those rows are flagged `backfilled` and dated
+from the account's creation, because the original purchases happened at
+prices and times nobody recorded — the app labels them "opening position"
+rather than present a reconstruction as a trade that was observed.
+
+Migration 007 brings `price_history` into line with every other table
+that holds money — `CHECK` constraints rejecting negative and `NaN` values,
+a `NOT NULL` symbol, and the same `ON DELETE CASCADE` that `price_intraday`
+already had:
+
+```bash
+psql -U postgres -d practice -f migrations/007_price_history_integrity.sql
+```
+
+It repairs any existing bad rows before adding the constraints, so it
+cannot fail halfway on data that predates it. A nonsense price becomes
+`NULL` rather than being deleted, since `NULL` is what the loaders already
+write for a gap and deleting would lose the whole trading day.
+
+Every migration is safe to re-run, and `python -m portfolio_tracker.init_db`
+runs all of them after `schema.sql`. That pairing is deliberate:
+`schema.sql` is written in `CREATE ... IF NOT EXISTS` and so never alters a
+table that already exists, while the migrations do exactly that. Running
+only one of the two leaves a database that depends on which route it
+arrived by. `tests/test_schema_parity.py` builds one database each way and
+compares them down to the constraint definitions, so the two cannot drift.
+
+## Accounts and email
+
+`users.google_sub` is the identity; `users.email` is a mutable attribute
+refreshed from Google on every sign-in. There is deliberately **no
+`UNIQUE` constraint on `email`**, and two accounts can legitimately share
+an address — most obviously when a workspace address is freed and
+reassigned, so a new person arrives with the same address and a new `sub`.
+
+Adding the constraint was tried and rejected: with `UNIQUE (lower(email))`
+in place, that new hire's first sign-in dies on a `UniqueViolation` before
+the account is created, and so does an existing account whose Google
+address changes to one another row already holds. Both surface as a 500
+rather than as anything a person could act on. Identity belongs to `sub`,
+and constraining a value the identity provider controls converts their
+routine administration into our outage.
+
+What follows from that is that every read keyed on email has to be
+deliberate:
+
+- `get_by_email` orders by `id` before taking a row, so the answer is at
+  least stable. It used to `fetchone()` with no `ORDER BY`, which let
+  `PORTFOLIO_USER` resolve to a different account between one call and the
+  next.
+- `list_by_email` returns all of them, for callers that must not guess.
+- `resolve_cli_user` refuses an ambiguous address and names the candidates,
+  rather than silently trading against whichever row came back first.
+  `PORTFOLIO_USER_ID` names one exactly.
+- Local dev sign-in reuses an existing account at that address instead of
+  minting a second one beside it. It previously synthesised a
+  `dev:<email>` subject unconditionally, which could never match a real
+  Google `sub` — so signing in locally with an address that already had an
+  account silently forked it into two portfolios.
+
+## Security notes
+
+- **CSRF tokens on every state-changing request.** Flask-WTF's `CSRFProtect` checks every POST: buying and selling (each step), refreshing prices, loading history, fetching chart data, the Ask page and its JSON endpoint, dev sign-in, and signing out. Forms carry a hidden `csrf_token`; the Ask panel sends the same token as an `X-CSRFToken` header. The Ask endpoint used to rely on accepting only JSON, which stops a plain cross-site HTML form but not every cross-site request, so it now needs the token too. A request without a valid token is refused with 400 before the route runs: no trade, no API call, nothing counted against the rate limit. Tokens are tied to the session and last as long as it does.
+- **Signing out is a POST.** A sign-out link could be triggered by any other site with an image tag. An old link to `/logout` now shows a page with a Sign out button instead.
+- **A fixed signing key in production.** See `FLASK_SECRET_KEY` under Setup.
+- **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from Yahoo Finance or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
+- **Market data calls are bounded.** Every yfinance call has a time limit (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
+- **The assistant's rate limit is in the database** (20 questions per account per 10 minutes), so it survives restarts and holds across every worker process.
+- **The trade log cannot be rewritten.** `trades` carries a trigger that refuses any `UPDATE` or `DELETE`, so neither an application bug nor a hand-typed `psql` session can quietly alter the record of what happened. The one sanctioned exception is erasing an account, which sets `app.erasing_account` with `SET LOCAL` for the length of that one transaction; the exemption ends when the transaction does and cannot leak into a later query. A direct `DELETE FROM users` is therefore refused, with a hint naming `users.delete_account` as the way through.
+- **Deleting an account really deletes it.** One transaction removes the user row, and `ON DELETE CASCADE` takes the positions, the trade history and the rate-limit rows with it — so a table added later is covered by the schema rather than by somebody remembering to extend a list of `DELETE` statements. A test walks `information_schema` to assert that *nothing* referencing `users` keeps a row. Shared market data is deliberately left alone: prices belong to everyone.
+- **Deletion needs a typed word, not a click.** The form requires the word `DELETE`, and `operations.delete_account` re-checks it, so the guard does not live only in a template that a second front end might not render. Deleting is a `POST` with a CSRF token, and a `GET` cannot do it.
+- **The data export is a download, never cached.** It carries `Cache-Control: no-store`, and money is exported as strings rather than floats so a cost basis of `164.20` survives the round trip exactly.
+- **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
+
 ## Tests
 
 ```bash
-pip install pytest
-pytest
+pip install -r requirements.txt
+python -m pytest
 ```
 
-Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere. Network calls to yfinance are mocked, so the suite is offline and deterministic.
+Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. yfinance and Gemini are mocked, and a test that reaches the real Gemini API fails.
+
+GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.10.4 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
 
 ## What I Gained from building this
 

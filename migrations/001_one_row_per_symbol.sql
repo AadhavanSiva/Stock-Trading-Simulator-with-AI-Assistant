@@ -53,19 +53,19 @@ END $$;
 DO $$ BEGIN
     ALTER TABLE portfolio ADD CONSTRAINT portfolio_shares_positive
         CHECK (shares > 0 AND shares <> 'NaN');
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 DO $$ BEGIN
     ALTER TABLE portfolio ADD CONSTRAINT portfolio_purchase_price_sane
         CHECK (purchase_price >= 0 AND purchase_price <> 'NaN');
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 DO $$ BEGIN
     ALTER TABLE stocks ADD CONSTRAINT stocks_current_price_sane
         CHECK (current_price IS NULL OR (current_price >= 0 AND current_price <> 'NaN'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS price_history_symbol_date_idx

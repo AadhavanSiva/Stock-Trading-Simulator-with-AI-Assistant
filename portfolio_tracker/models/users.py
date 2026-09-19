@@ -62,15 +62,62 @@ def get_by_google_sub(google_sub):
 
 
 def get_by_email(email):
+    """The account at an address — the oldest one, if more than one shares it.
+
+    `email` is not unique and deliberately so (see list_by_email), so this
+    orders before it takes one row. Without the ORDER BY, PostgreSQL is
+    free to return either row and may return a different one from one call
+    to the next, which made `PORTFOLIO_USER` resolve to an account at
+    random. Callers that must not guess should use list_by_email instead.
+    """
     with cursor() as cur:
         cur.execute(
             """
             SELECT id, google_sub, email, display_name, cash
             FROM users WHERE lower(email) = lower(%s)
+            ORDER BY id
             """,
             (email,),
         )
         return cur.fetchone()
+
+
+def list_by_email(email):
+    """Every account at an address, oldest first.
+
+    More than one is possible. `google_sub` is the identity; the email is a
+    mutable attribute refreshed from Google on each sign-in, so two
+    accounts can legitimately end up sharing an address — most obviously
+    when a workspace address is freed and reassigned to a new person, who
+    arrives with a new `sub`. This exists so callers can tell "one account"
+    from "several" and say so, rather than silently picking.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, google_sub, email, display_name, cash
+            FROM users WHERE lower(email) = lower(%s)
+            ORDER BY id
+            """,
+            (email,),
+        )
+        return cur.fetchall()
+
+
+def dev_account(email):
+    """Find or create the local-only account behind a dev sign-in.
+
+    An address that already has an account signs into *that* account. The
+    earlier version minted a synthetic `dev:<email>` subject unconditionally,
+    which could never match a real Google `sub`, so signing in locally with
+    an address that already had a Google account produced a second row with
+    the same email and a separate portfolio — and left `get_by_email`
+    choosing between them.
+    """
+    existing = get_by_email(email)
+    if existing is not None:
+        return existing
+    return upsert_from_google(f"dev:{email}", email, email.split("@")[0])
 
 
 def list_users():
@@ -89,9 +136,21 @@ def get_cash(user_id):
 
 
 def set_cash(user_id, amount):
-    """Set a balance outright. For resets and corrections, not for trading —
-    buys and sells move cash inside their own transaction so the money and
-    the shares can never disagree."""
+    """Set a balance outright. For resets and corrections, not for trading.
+
+    HAZARD, if you are about to call this from something that trades: this
+    is a blind write. It does not lock the account row, so it does not read
+    the balance it overwrites — a trade committing between your read and
+    this UPDATE is silently discarded, and the cash then disagrees with the
+    trade log that says it moved. It also takes the `users` lock without
+    taking `portfolio` first or second, so mixing it into a trading path
+    reintroduces the lock-ordering deadlock that record_purchase and
+    record_sale were aligned to avoid.
+
+    Buying and selling move cash inside the same transaction as the shares
+    (see models/portfolio.py); anything that trades belongs there, not
+    here. Today this is called only from tests.
+    """
     amount = Decimal(amount)
     if not amount.is_finite() or amount < 0:
         raise ValueError("Cash balance must be a non-negative number.")
@@ -106,6 +165,31 @@ def set_cash(user_id, amount):
         return row[0]
 
 
+def delete_account(user_id):
+    """Erase an account and everything belonging to it, in one transaction.
+
+    The deletes are not spelled out here: `portfolio`, `trades` and
+    `assistant_requests` all reference users(id) ON DELETE CASCADE, so
+    removing the row removes them with it, in the same transaction, with no
+    chance of a table being missed as the schema grows. Nothing of the
+    person's is left behind — `stocks` and `price_history` are shared market
+    data that was never theirs.
+
+    `app.erasing_account` is what lets the cascade reach the trade log,
+    which is otherwise append-only (see the trades_no_rewrite trigger).
+    SET LOCAL scopes it to this transaction, so the exemption ends when the
+    deletion does and cannot leak into any later query on the connection.
+
+    Returns the deleted account's email, or None if there was no such
+    account.
+    """
+    with cursor(commit=True) as cur:
+        cur.execute("SET LOCAL app.erasing_account = 'on'")
+        cur.execute("DELETE FROM users WHERE id = %s RETURNING email", (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def resolve_cli_user():
     """Work out which account the terminal interface should act as.
 
@@ -113,6 +197,22 @@ def resolve_cli_user():
     by PORTFOLIO_USER in .env. Raises UnknownUser with a message that says
     how to fix it rather than failing obscurely.
     """
+    if config.PORTFOLIO_USER_ID:
+        try:
+            wanted = int(str(config.PORTFOLIO_USER_ID).strip())
+        except ValueError:
+            raise UnknownUser(
+                f"PORTFOLIO_USER_ID must be a number, not "
+                f"'{config.PORTFOLIO_USER_ID}'."
+            )
+        user = get_by_id(wanted)
+        if user is None:
+            raise UnknownUser(
+                f"No account with id {wanted}. Known accounts: "
+                + (_known_emails() or "none yet.")
+            )
+        return user
+
     email = config.PORTFOLIO_USER
     if not email:
         raise UnknownUser(
@@ -121,14 +221,24 @@ def resolve_cli_user():
             "Known accounts: " + (_known_emails() or "none yet — sign in via the web app first.")
         )
 
-    user = get_by_email(email)
-    if user is None:
+    matches = list_by_email(email)
+    if not matches:
         raise UnknownUser(
             f"No account found for '{email}'. Sign in to the web app with that "
             "Google account first, or correct PORTFOLIO_USER in .env.\n"
             "Known accounts: " + (_known_emails() or "none yet.")
         )
-    return user
+    if len(matches) > 1:
+        # Silently picking one would let the terminal trade against a
+        # different portfolio than the browser shows, with nothing on
+        # screen to explain the discrepancy.
+        listed = ", ".join(f"id {row[0]} ({row[1]})" for row in matches)
+        raise UnknownUser(
+            f"More than one account uses '{email}': {listed}. PORTFOLIO_USER "
+            f"cannot say which one you mean. Set PORTFOLIO_USER_ID to the id "
+            f"you want, or delete the account you no longer use."
+        )
+    return matches[0]
 
 
 def _known_emails():

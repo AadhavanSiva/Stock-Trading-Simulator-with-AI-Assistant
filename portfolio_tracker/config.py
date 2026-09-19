@@ -5,16 +5,68 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# A full connection string, as hosted databases (Neon, Render, ...) hand
+# out: postgresql://user:password@host/dbname?sslmode=require. When set it
+# is used as-is, query options included, and the DB_* settings below are
+# ignored. Local development keeps using the DB_* settings.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_NAME = os.getenv("DB_NAME", "practice")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
-# Flask session signing key. Set FLASK_SECRET_KEY in .env to keep flash
-# messages working across restarts; otherwise a fresh random key is
-# generated per process. Never hardcode a real one.
-SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
+# Flask session signing key. It signs the session cookie and the CSRF
+# tokens, so it must stay the same across restarts and across every process
+# serving the app. Required outside debug mode; see flask_secret_key().
+# Generate one with:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "").strip() or None
+
+# Set when the app runs behind a proxy that terminates HTTPS (Render, Heroku,
+# a load balancer). The app then trusts one hop of X-Forwarded-* headers, so
+# it builds https:// links (Google sign-in rejects an http:// callback), and
+# marks the session cookie Secure. Leave unset locally: without a proxy in
+# front, anyone could send those headers.
+BEHIND_HTTPS_PROXY = os.getenv("BEHIND_HTTPS_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+
+class ConfigurationError(RuntimeError):
+    """A setting the app cannot safely run without is missing."""
+
+
+def flask_secret_key(debug):
+    """The key Flask signs sessions with.
+
+    In production a missing key must stop the app at startup. Silently
+    generating a random one would sign everyone out on every restart, and
+    with more than one worker process each would reject the others'
+    sessions and CSRF tokens, which looks like random failures. Local
+    development (debug mode) still gets a throwaway key so the app runs
+    without setup.
+    """
+    if SECRET_KEY:
+        return SECRET_KEY
+    if debug:
+        return secrets.token_hex(32)
+    raise ConfigurationError(
+        "FLASK_SECRET_KEY is not set. It is required when the app is not "
+        "running in debug mode. Generate one with\n"
+        '    python -c "import secrets; print(secrets.token_hex(32))"\n'
+        "and add FLASK_SECRET_KEY=<that value> to .env (or the server's "
+        "environment), then start the app again."
+    )
+
+
+# --- Market data ------------------------------------------------------------
+# Upper bounds, in seconds, on a single Yahoo Finance request. A quote backs a
+# page load, so it gives up sooner; a full price history can be large.
+MARKET_QUOTE_TIMEOUT = float(os.getenv("MARKET_QUOTE_TIMEOUT", "8"))
+MARKET_HISTORY_TIMEOUT = float(os.getenv("MARKET_HISTORY_TIMEOUT", "20"))
+# How long a looked-up quote is reused for page views before asking Yahoo
+# again. Buying, selling and "Refresh prices" always fetch a fresh price.
+QUOTE_CACHE_SECONDS = float(os.getenv("QUOTE_CACHE_SECONDS", "30"))
 
 # --- Google sign-in -------------------------------------------------------
 # Create these at console.cloud.google.com: APIs & Services > Credentials >
@@ -36,6 +88,10 @@ ALLOW_DEV_LOGIN = os.getenv("ALLOW_DEV_LOGIN", "").strip() in ("1", "true", "yes
 # Which account the terminal interface acts as. The CLI cannot run a browser
 # redirect, so it reads the account from here instead.
 PORTFOLIO_USER = os.getenv("PORTFOLIO_USER")
+# An unambiguous alternative, by account id. Email is not unique — two
+# accounts can share an address — so this is the way to name one exactly
+# when PORTFOLIO_USER would be ambiguous. Takes precedence when both are set.
+PORTFOLIO_USER_ID = os.getenv("PORTFOLIO_USER_ID")
 
 # Cash every new account starts with, in dollars.
 STARTING_CASH = os.getenv("STARTING_CASH", "50000")

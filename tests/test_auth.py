@@ -108,14 +108,14 @@ class TestCallback:
     def test_returning_user_reuses_the_same_account(self, anon):
         with configured(), google_returns(self.CLAIMS):
             anon.get("/auth/callback")
-            anon.get("/logout")
+            anon.post("/logout")
             anon.get("/auth/callback")
         assert len(users.list_users()) == 1
 
     def test_a_returning_user_is_greeted_as_such_not_welcomed_again(self, anon):
         with configured(), google_returns(self.CLAIMS):
             anon.get("/auth/callback")
-            anon.get("/logout")
+            anon.post("/logout")
             response = anon.get("/auth/callback", follow_redirects=True)
         body = text(response)
         assert "Signed in as ann@example.com" in body
@@ -135,7 +135,7 @@ class TestCallback:
     def test_two_different_google_accounts_stay_separate(self, anon):
         with configured(), google_returns(self.CLAIMS):
             anon.get("/auth/callback")
-            anon.get("/logout")
+            anon.post("/logout")
         other = {"sub": "google-sub-999", "email": "bob@example.com", "name": "Bob"}
         with configured(), google_returns(other):
             anon.get("/auth/callback")

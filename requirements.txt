@@ -2,12 +2,22 @@ yfinance==1.5.2
 psycopg2-binary==2.9.12
 python-dotenv==1.2.2
 pandas==2.0.3
+# Pinned because pandas 2.0.3 ships extensions compiled against the numpy 1.x
+# ABI. Left unpinned, pip resolves numpy 2.x and every import of pandas dies
+# with "numpy.dtype size changed, may indicate binary incompatibility" — which
+# is invisible locally, where an older numpy is already installed, and fails
+# every job on a clean CI runner. This is the version local development uses.
+numpy==1.25.0
 # zoneinfo needs this on Windows, which ships no timezone database
 tzdata==2023.3
 
 # Web interface
 Flask==3.1.3
+Flask-WTF==1.2.2
 Authlib==1.8.0
+# Production server (used on Render; does not run on Windows, which is fine:
+# local development uses `flask run`)
+gunicorn==23.0.0
 
 # AI assistant
 google-genai==2.23.0

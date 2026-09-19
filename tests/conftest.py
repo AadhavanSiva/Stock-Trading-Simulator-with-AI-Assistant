@@ -2,14 +2,21 @@
 
 Database tests run against a throwaway database (default: portfolio_test),
 never the app's real one. If PostgreSQL isn't reachable the DB tests skip
-instead of failing, so the pure-logic tests still run anywhere.
+instead of failing, so the pure-logic tests still run anywhere. Set
+REQUIRE_DB=1 (CI does) to make an unreachable database a failure instead,
+so a broken service container cannot pass as a green run of skips.
 """
 import os
 from decimal import Decimal
 
 import pytest
 
-from portfolio_tracker import config
+# The app refuses to start without a signing key outside debug mode. Tests
+# are not a debug run, so give them a throwaway key before anything imports
+# the config. A key already in the environment is left alone.
+os.environ.setdefault("FLASK_SECRET_KEY", "test-only-key-not-a-secret")
+
+from portfolio_tracker import config  # noqa: E402
 
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", "portfolio_test")
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schema.sql")
@@ -40,6 +47,10 @@ def isolated_auth_config(monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", None)
     monkeypatch.setattr(config, "ALLOW_DEV_LOGIN", False)
     monkeypatch.setattr(config, "PORTFOLIO_USER", None)
+    monkeypatch.setattr(config, "PORTFOLIO_USER_ID", None)
+    # A DATABASE_URL in .env points at a real (possibly hosted) database;
+    # the app would connect there instead of the throwaway test database.
+    monkeypatch.setattr(config, "DATABASE_URL", None)
     # Same reasoning for the assistant: an ASSISTANT_MODEL in someone's .env
     # must not change what the tests assert.
     monkeypatch.setattr(config, "ASSISTANT_ENABLED", True)
@@ -75,6 +86,42 @@ def no_real_api_calls(monkeypatch):
     monkeypatch.setattr(assistant, "_search_blocked_until", 0.0)
 
 
+class RealMarketDataCall(BaseException):
+    """Raised when a test reaches yfinance itself.
+
+    A BaseException on purpose: market_data turns any ordinary exception
+    from yfinance into "Yahoo Finance didn't respond", which would let an
+    unmocked test pass quietly. This one is not caught there, so the test
+    fails loudly instead, and the suite stays offline in CI.
+    """
+
+
+class _NoRealMarketData:
+    def __init__(self, symbol, *args, **kwargs):
+        raise RealMarketDataCall(
+            f"A test tried to call Yahoo Finance for {symbol!r}. Patch "
+            "market_data.get_quote / get_live_price / get_price_history, "
+            "or market_data.yf.Ticker."
+        )
+
+
+@pytest.fixture(autouse=True)
+def no_real_market_data(monkeypatch):
+    from portfolio_tracker.services import market_data
+
+    monkeypatch.setattr(market_data.yf, "Ticker", _NoRealMarketData)
+
+
+@pytest.fixture(autouse=True)
+def empty_quote_cache():
+    """A quote cached by one test must not answer for the next."""
+    from portfolio_tracker.services import market_data
+
+    market_data.clear_quote_cache()
+    yield
+    market_data.clear_quote_cache()
+
+
 @pytest.fixture(scope="session")
 def test_database():
     """Create the test database once per run and point config at it."""
@@ -83,6 +130,8 @@ def test_database():
     try:
         admin = _admin_connection()
     except psycopg2.OperationalError as exc:
+        if os.getenv("REQUIRE_DB", "").strip() in ("1", "true", "yes"):
+            pytest.fail(f"REQUIRE_DB is set but PostgreSQL is not reachable: {exc}")
         pytest.skip(f"PostgreSQL not reachable: {exc}")
 
     admin.autocommit = True
@@ -103,7 +152,8 @@ def test_database():
         port=config.DB_PORT,
     )
     with conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS price_intraday, price_history, portfolio, stocks, users CASCADE")
+        cur.execute("DROP TABLE IF EXISTS trades, assistant_requests, price_intraday, "
+                    "price_history, portfolio, stocks, users CASCADE")
         with open(SCHEMA_PATH, encoding="utf-8") as fh:
             cur.execute(fh.read())
     conn.commit()
@@ -121,7 +171,10 @@ def db(test_database):
 
     with cursor(commit=True) as cur:
         cur.execute(
-            "TRUNCATE price_intraday, price_history, portfolio, stocks, users RESTART IDENTITY CASCADE"
+            # TRUNCATE does not fire row-level triggers, so the append-only guard
+            # on `trades` does not stand in the way of resetting between tests.
+            "TRUNCATE trades, assistant_requests, price_intraday, price_history, "
+            "portfolio, stocks, users RESTART IDENTITY CASCADE"
         )
     return test_database
 
@@ -155,21 +208,29 @@ def seeded(user):
 
 
 @pytest.fixture
-def anon(db):
-    """A web client with no session — signed out."""
+def anon(db, monkeypatch):
+    """A web client with no session — signed out.
+
+    CSRF checks are off for these general-purpose clients so each test can
+    post a form directly. tests/test_csrf.py turns them back on and proves
+    every state-changing route refuses a request without a valid token,
+    and that every rendered form carries one.
+    """
     import web as web_module
 
     web_module.app.config.update(TESTING=True)
+    monkeypatch.setitem(web_module.app.config, "WTF_CSRF_ENABLED", False)
     with web_module.app.test_client() as c:
         yield c
 
 
 @pytest.fixture
-def client(user):
+def client(user, monkeypatch):
     """A web client already signed in as the `user` fixture's account."""
     import web as web_module
 
     web_module.app.config.update(TESTING=True)
+    monkeypatch.setitem(web_module.app.config, "WTF_CSRF_ENABLED", False)
     with web_module.app.test_client() as c:
         with c.session_transaction() as sess:
             sess["user_id"] = user

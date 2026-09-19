@@ -57,11 +57,6 @@ def quote():
     return patch.object(market_data, "get_quote", return_value=(Decimal("332.27"), "Apple Inc."))
 
 
-@pytest.fixture(autouse=True)
-def reset_rate_limit():
-    web_module._asked.clear()
-    yield
-    web_module._asked.clear()
 
 
 class TestRequest:

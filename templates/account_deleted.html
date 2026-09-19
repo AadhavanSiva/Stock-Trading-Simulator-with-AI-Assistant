@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Account deleted · Portfolio Tracker{% endblock %}
+
+{# Shown once, to the person who just deleted their account. They are
+   signed out by this point, so this page assumes no session. #}
+{% block content %}
+<div class="gate">
+    <div class="panel">
+        <div class="gate-head">
+            <h1>Your account is gone</h1>
+            <p>
+                Everything belonging to <strong>{{ deleted_email }}</strong> has been
+                deleted: the account itself, its cash balance, every position and
+                the whole trade history. You have been signed out.
+            </p>
+        </div>
+        <p class="faint">
+            Nothing is kept and nothing can be restored. Signing in with the same
+            Google account again opens a new account, starting fresh with
+            {{ starting_cash | money }} in practice cash.
+        </p>
+        <div class="actions">
+            <a class="btn btn-primary" href="{{ url_for('index') }}">Back to the start</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

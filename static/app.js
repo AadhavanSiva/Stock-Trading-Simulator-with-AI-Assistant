@@ -52,6 +52,24 @@
 
     document.addEventListener("DOMContentLoaded", function () {
 
+        /* ------------------------------------------------- trade times
+         * The server renders each trade time in UTC, because it cannot
+         * know the reader's zone. Where JavaScript runs we restate it in
+         * theirs — a trade you made is easier to recognise by the hour it
+         * felt like than by the hour it was recorded. The UTC text stays
+         * put if anything here fails, so nothing is ever left blank.
+         */
+        each("[data-utc]", function (el) {
+            var when = new Date(el.getAttribute("data-utc"));
+            if (isNaN(when)) return;
+            try {
+                el.textContent = when.toLocaleString(undefined, {
+                    month: "short", day: "numeric", year: "numeric",
+                    hour: "numeric", minute: "2-digit"
+                });
+            } catch (e) { /* keep the server's UTC rendering */ }
+        });
+
         /* -------------------------------------------------- busy buttons
          * A form that hits the network must never look frozen. The button
          * keeps its width so the layout does not jump.
@@ -631,8 +649,14 @@
             refused: "Ask can't help with that one",
             failed: "Ask couldn't answer that",
             network: "Couldn't reach the app",
-            aborted: "Stopped"
+            aborted: "Stopped",
+            expired: "This page has expired"
         };
+
+        function csrfToken() {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute("content") : "";
+        }
 
         function failure(question, kind, message, retryAfter) {
             var box = el("div", "turn turn-error" + (kind === "failed" || kind === "network" ? "" : " is-info"));
@@ -652,6 +676,12 @@
                     setTimeout(tick, 1000);
                 };
                 tick();
+            }
+            if (kind === "expired") {
+                var reload = el("button", "btn btn-secondary btn-sm", "Reload page");
+                reload.type = "button";
+                reload.addEventListener("click", function () { window.location.reload(); });
+                box.appendChild(reload);
             }
             if (kind === "failed" || kind === "network" || kind === "aborted") {
                 var retry = el("button", "btn btn-secondary btn-sm", "Try again");
@@ -742,7 +772,12 @@
             fetch("/api/assistant", {
                 method: "POST",
                 signal: controller ? controller.signal : undefined,
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    // Checked by the server with every POST (Flask-WTF).
+                    "X-CSRFToken": csrfToken()
+                },
                 body: JSON.stringify({
                     question: question,
                     symbol: symbol,

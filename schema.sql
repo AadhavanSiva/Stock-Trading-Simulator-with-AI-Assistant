@@ -52,13 +52,28 @@ CREATE INDEX IF NOT EXISTS portfolio_user_idx ON portfolio (user_id);
 -- deliberately not per-user.
 CREATE TABLE IF NOT EXISTS price_history (
     id      SERIAL PRIMARY KEY,
-    symbol  TEXT REFERENCES stocks(symbol),
+    -- NOT NULL is load-bearing next to the UNIQUE below: PostgreSQL treats
+    -- NULLs as distinct in a unique constraint, so a nullable symbol would
+    -- let the same day be inserted over and over and quietly break the
+    -- "safe to re-run" guarantee the loader depends on.
+    symbol  TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
     date    DATE NOT NULL,
-    open    NUMERIC,
-    high    NUMERIC,
-    low     NUMERIC,
-    close   NUMERIC,
-    volume  BIGINT,
+    -- The OHLC columns stay nullable: Yahoo genuinely leaves gaps, and the
+    -- readers already filter them. What they must never hold is a NaN.
+    -- 'NaN'::numeric sorts ABOVE every other numeric, so one bad cell makes
+    -- MAX(close) return NaN and every high on the history page becomes NaN
+    -- with nothing to show where it came from. The Python loader filters
+    -- NaN too; this is the guarantee, that is the convenience.
+    open    NUMERIC CONSTRAINT price_history_open_sane
+            CHECK (open IS NULL OR (open >= 0 AND open <> 'NaN')),
+    high    NUMERIC CONSTRAINT price_history_high_sane
+            CHECK (high IS NULL OR (high >= 0 AND high <> 'NaN')),
+    low     NUMERIC CONSTRAINT price_history_low_sane
+            CHECK (low IS NULL OR (low >= 0 AND low <> 'NaN')),
+    close   NUMERIC CONSTRAINT price_history_close_sane
+            CHECK (close IS NULL OR (close >= 0 AND close <> 'NaN')),
+    volume  BIGINT CONSTRAINT price_history_volume_sane
+            CHECK (volume IS NULL OR volume >= 0),
     UNIQUE (symbol, date)
 );
 
@@ -85,3 +100,99 @@ CREATE TABLE IF NOT EXISTS price_intraday (
 
 CREATE INDEX IF NOT EXISTS price_intraday_symbol_ts_idx
     ON price_intraday (symbol, ts DESC);
+
+-- One row per question asked of the assistant, for its rate limit.
+--
+-- In the database rather than in memory so the limit survives a restart and
+-- holds across every worker process. Rows older than the limit's window are
+-- deleted as each new question is checked, so this stays small: at most
+-- the limit's worth of rows per account.
+CREATE TABLE IF NOT EXISTS assistant_requests (
+    id        BIGSERIAL PRIMARY KEY,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    asked_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS assistant_requests_user_time_idx
+    ON assistant_requests (user_id, asked_at);
+
+-- Every buy and sell, append-only.
+--
+-- This is the account's ledger: the positions in `portfolio` are a running
+-- total, but this is how they got that way. Each row is written inside the
+-- same transaction that moves the cash and the shares (see
+-- models/portfolio.py), so the log can never disagree with the balances —
+-- there is no path that records a trade without moving the money, or the
+-- other way round.
+--
+-- `cost_basis` is the weighted-average price per share at the instant of a
+-- sale, captured while the holding is locked. It is what makes realized
+-- gain a plain sum over this table instead of a replay of every prior buy,
+-- and it is only meaningful on a sell, which the CHECK below enforces.
+CREATE TABLE IF NOT EXISTS trades (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol      TEXT NOT NULL REFERENCES stocks(symbol),
+    side        TEXT NOT NULL
+        CONSTRAINT trades_side_known CHECK (side IN ('buy', 'sell')),
+    shares      NUMERIC NOT NULL
+        CONSTRAINT trades_shares_positive CHECK (shares > 0 AND shares <> 'NaN'),
+    price       NUMERIC NOT NULL
+        CONSTRAINT trades_price_sane CHECK (price >= 0 AND price <> 'NaN'),
+    -- The cash that actually moved, in whole cents, as the transaction
+    -- applied it. Stored rather than recomputed so the ledger reports the
+    -- figure the balance was changed by, not a re-rounding of it.
+    total_value NUMERIC NOT NULL
+        CONSTRAINT trades_total_value_sane CHECK (total_value >= 0 AND total_value <> 'NaN'),
+    cost_basis  NUMERIC
+        CONSTRAINT trades_cost_basis_sane
+        CHECK (cost_basis IS NULL OR (cost_basis >= 0 AND cost_basis <> 'NaN'))
+        CONSTRAINT trades_cost_basis_only_on_sells
+        CHECK ((side = 'sell') = (cost_basis IS NOT NULL)),
+    -- True for the opening rows migration 006 synthesized for positions
+    -- that predate this table, so the UI can say "opening position" rather
+    -- than present a trade that never happened at a time it did not happen.
+    backfilled  BOOLEAN NOT NULL DEFAULT FALSE,
+    traded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Paging reads newest-first; id breaks ties so two trades in the same
+-- instant cannot swap places between one page and the next.
+CREATE INDEX IF NOT EXISTS trades_user_time_idx
+    ON trades (user_id, traded_at DESC, id DESC);
+
+-- Realized gain per position groups by symbol within one account.
+CREATE INDEX IF NOT EXISTS trades_user_symbol_idx
+    ON trades (user_id, symbol);
+
+-- A ledger the application can only append to.
+--
+-- Immutability here is not a convention the code is trusted to keep: the
+-- database refuses the UPDATE or DELETE outright, so a bug, a stray query
+-- or a hand-typed psql session cannot quietly rewrite what happened. A
+-- correction is a new row, never an edit to an old one.
+--
+-- The one sanctioned exception is erasing an account: deleting a person's
+-- data has to be able to remove their trades too. That path sets
+-- app.erasing_account for the length of its transaction (see
+-- users.delete_account), which is deliberately awkward to do by accident
+-- and shows up plainly in the code that does it.
+CREATE OR REPLACE FUNCTION trades_append_only() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE'
+       AND current_setting('app.erasing_account', true) = 'on' THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'trades is append-only: % on trade id % was refused',
+                    TG_OP, OLD.id
+        USING ERRCODE = 'restrict_violation',
+              HINT = 'Corrections are new rows, never edits. Deleting an '
+                     'account is the one exception: use users.delete_account, '
+                     'which sets app.erasing_account for its transaction.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trades_no_rewrite ON trades;
+CREATE TRIGGER trades_no_rewrite
+    BEFORE UPDATE OR DELETE ON trades
+    FOR EACH ROW EXECUTE FUNCTION trades_append_only();

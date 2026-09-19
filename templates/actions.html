@@ -24,6 +24,7 @@
         </div>
         <form method="post" action="{{ url_for('refresh_prices') }}"
               data-busy-label="Fetching prices…">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary"
                     {% if not holdings %}disabled{% endif %}>Fetch prices</button>
         </form>
@@ -41,6 +42,7 @@
         </div>
         <form method="post" action="{{ url_for('load_history') }}"
               data-busy-label="Downloading…">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-secondary"
                     {% if not holdings %}disabled{% endif %}>Fetch past prices</button>
         </form>

@@ -1,0 +1,28 @@
+{# Trade presentation shared by the portfolio page and the full history.
+
+   A buy and a sell are labelled, not coloured: which side a trade was on
+   is a fact about the trade, not a verdict on it. The same reasoning as
+   _delta.html — the word carries the meaning, any colour sits on top. #}
+
+{% macro side_tag(side) -%}
+    <span class="side-tag side-{{ side }}">{{ 'Bought' if side == 'buy' else 'Sold' }}</span>
+{%- endmacro %}
+
+{# One line of recent activity, for the portfolio page's panel. #}
+{% macro activity_row(row) -%}
+    <li class="activity-row">
+        <a class="activity-symbol" href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+            <span class="ticker">{{ row.symbol }}</span>
+            <span class="company">{{ row.company_name }}</span>
+        </a>
+        <span class="activity-what">
+            {{ side_tag(row.side) }}
+            <span class="num">{{ row.shares | shares }}</span>
+            at <span class="num">{{ row.price | money }}</span>
+        </span>
+        <span class="activity-when faint num" data-utc="{{ row.traded_at.isoformat() }}">
+            {{ row.traded_at | long_datetime }}
+        </span>
+        <span class="activity-value num">{{ row.total_value | money }}</span>
+    </li>
+{%- endmacro %}

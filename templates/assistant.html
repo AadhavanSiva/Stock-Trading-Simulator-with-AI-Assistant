@@ -39,6 +39,7 @@
 
         <form method="post" action="{{ url_for('assistant_page') }}"
               {% if answer %}style="margin-top:var(--s5)"{% endif %}>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="symbol" value="{{ symbol }}">
             <div class="field" style="max-width:none">
                 <label for="assistant-page-question">Your question</label>

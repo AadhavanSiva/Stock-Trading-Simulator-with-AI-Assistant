@@ -63,11 +63,6 @@ def using(client):
     return patch.object(assistant, "_get_client", return_value=client)
 
 
-@pytest.fixture(autouse=True)
-def reset_rate_limit():
-    web_module._asked.clear()
-    yield
-    web_module._asked.clear()
 
 
 def text(response):

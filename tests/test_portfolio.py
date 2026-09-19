@@ -64,11 +64,9 @@ class TestCash:
 
     def test_selling_credits_cash(self, seeded):
         buy(seeded, "AAPL", 10, 100)
-        sold, remaining, cash = portfolio.record_sale(
-            seeded, "AAPL", Decimal("150"), Decimal("4")
-        )
-        assert sold == Decimal("4")
-        assert cash == STARTING - Decimal("1000") + Decimal("600")
+        sale = portfolio.record_sale(seeded, "AAPL", Decimal("150"), Decimal("4"))
+        assert sale.sold == Decimal("4")
+        assert sale.cash == STARTING - Decimal("1000") + Decimal("600")
 
     def test_round_trip_at_the_same_price_returns_the_balance(self, seeded):
         buy(seeded, "AAPL", 10, 100)
@@ -107,11 +105,9 @@ class TestCash:
 class TestSales:
     def test_partial_sale_leaves_the_remainder(self, seeded):
         buy(seeded, "AAPL", 10, 100)
-        sold, remaining, _ = portfolio.record_sale(
-            seeded, "AAPL", Decimal("150"), Decimal("4")
-        )
-        assert sold == Decimal("4")
-        assert remaining == Decimal("6")
+        sale = portfolio.record_sale(seeded, "AAPL", Decimal("150"), Decimal("4"))
+        assert sale.sold == Decimal("4")
+        assert sale.remaining == Decimal("6")
 
     def test_full_sale_closes_the_position(self, seeded):
         buy(seeded, "AAPL", 10, 100)
@@ -131,7 +127,7 @@ class TestSales:
 
     def test_cannot_oversell(self, seeded):
         buy(seeded, "AAPL", 10, 100)
-        sold, _, _ = portfolio.record_sale(seeded, "AAPL", Decimal("150"), Decimal("11"))
+        sold = portfolio.record_sale(seeded, "AAPL", Decimal("150"), Decimal("11")).sold
         assert sold == 0
         assert portfolio.get_holding(seeded, "AAPL")[0] == Decimal("10")
 
@@ -221,9 +217,19 @@ class TestSchemaConstraints:
 
     def test_deleting_an_account_removes_its_holdings(self, seeded):
         buy(seeded, "AAPL", 10, 100)
-        with cursor(commit=True) as cur:
-            cur.execute("DELETE FROM users WHERE id = %s", (seeded,))
+        users.delete_account(seeded)
         assert portfolio.get_holding(seeded, "AAPL") is None
+
+    def test_a_raw_delete_is_refused_and_says_where_to_go(self, seeded):
+        """The cascade would reach the append-only trade log, so the plain
+        DELETE is stopped — with a hint naming the sanctioned path, rather
+        than leaving someone guessing at a constraint they cannot see."""
+        buy(seeded, "AAPL", 10, 100)
+        with pytest.raises(Exception) as caught:
+            with cursor(commit=True) as cur:
+                cur.execute("DELETE FROM users WHERE id = %s", (seeded,))
+        assert "delete_account" in str(caught.value)
+        assert portfolio.get_holding(seeded, "AAPL") is not None
 
 
 class TestHoldingsWithPrices:

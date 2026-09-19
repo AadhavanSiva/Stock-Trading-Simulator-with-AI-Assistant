@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "_delta.html" import delta %}
+{% from "_trades.html" import side_tag %}
+{% set active = 'trades' %}
+{% block title %}Activity · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">Your account</span>
+    <h1>Activity</h1>
+</div>
+
+{% if not log.total %}
+    <div class="panel">
+        <div class="empty">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>No trades yet</h2>
+            <p>
+                Every buy and sell is recorded here as it happens, with what you
+                paid, what you got, and what each sale actually earned.
+            </p>
+            <div class="actions">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Buy your first shares</a>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <section class="kpis" aria-label="Trading summary">
+        <div class="kpi">
+            <p class="kpi-label">Trades recorded</p>
+            <p class="kpi-value num">{{ log.total }}</p>
+            <p class="kpi-foot">Buys and sells together</p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Realized gain or loss</p>
+            <p class="kpi-value">{{ delta(realized.total) }}</p>
+            <p class="kpi-foot">Money actually banked by selling</p>
+        </div>
+    </section>
+
+    <div class="panel panel-flush">
+        <div class="panel-head">
+            <h2>Every trade</h2>
+            <p class="faint">Newest first</p>
+        </div>
+        <div class="table-scroll" style="margin-top:var(--s3)">
+            <table class="stack-on-mobile">
+                <caption class="visually-hidden">
+                    Your trade history, newest first, {{ log.page_size }} to a page.
+                </caption>
+                <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Holding</th>
+                    <th scope="col">Side</th>
+                    <th scope="col" class="r">Shares</th>
+                    <th scope="col" class="r">Price</th>
+                    <th scope="col" class="r">Value</th>
+                    <th scope="col" class="r">Realized</th>
+                </tr>
+                </thead>
+                <tbody class="stagger">
+                {% for row in log.rows %}
+                    <tr>
+                        <td data-label="When">
+                            <span class="num" data-utc="{{ row.traded_at.isoformat() }}">{{ row.traded_at | long_datetime }}</span>
+                            {% if row.opening %}
+                                <span class="faint">Opening position</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Holding">
+                            <a class="symbol-link" href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                <span class="ticker">{{ row.symbol }}</span>
+                                <span class="company">{{ row.company_name }}</span>
+                            </a>
+                        </td>
+                        <td data-label="Side">{{ side_tag(row.side) }}</td>
+                        <td class="r num" data-label="Shares">{{ row.shares | shares }}</td>
+                        <td class="r num" data-label="Price">{{ row.price | money }}</td>
+                        <td class="r num" data-label="Value">{{ row.total_value | money }}</td>
+                        <td class="r" data-label="Realized">
+                            {% if row.gain is none %}
+                                <span class="faint">—</span>
+                            {% else %}
+                                {{ delta(row.gain) }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if log.pages > 1 %}
+            <nav class="pager" aria-label="Trade history pages">
+                {% if log.page > 1 %}
+                    <a class="btn btn-quiet btn-sm" rel="prev"
+                       href="{{ url_for('trades_view', page=log.page - 1) }}">Newer</a>
+                {% else %}
+                    <span class="btn btn-quiet btn-sm is-disabled" aria-hidden="true">Newer</span>
+                {% endif %}
+
+                <p class="faint pager-count">
+                    Page {{ log.page }} of {{ log.pages }}
+                    <span class="visually-hidden">, {{ log.total }} trades in total</span>
+                </p>
+
+                {% if log.page < log.pages %}
+                    <a class="btn btn-quiet btn-sm" rel="next"
+                       href="{{ url_for('trades_view', page=log.page + 1) }}">Older</a>
+                {% else %}
+                    <span class="btn btn-quiet btn-sm is-disabled" aria-hidden="true">Older</span>
+                {% endif %}
+            </nav>
+        {% endif %}
+    </div>
+
+    {% if realized.closed %}
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Closed out</h2>
+                <p class="faint">Sold in full, nothing still held</p>
+            </div>
+            <table class="stack-on-mobile">
+                <thead>
+                <tr>
+                    <th scope="col">Holding</th>
+                    <th scope="col" class="r">Shares sold</th>
+                    <th scope="col" class="r">Proceeds</th>
+                    <th scope="col" class="r">Realized</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in realized.closed %}
+                    <tr>
+                        <td data-label="Holding">
+                            <a class="symbol-link" href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                <span class="ticker">{{ row.symbol }}</span>
+                            </a>
+                        </td>
+                        <td class="r num" data-label="Shares sold">{{ row.shares_sold | shares }}</td>
+                        <td class="r num" data-label="Proceeds">{{ row.proceeds | money }}</td>
+                        <td class="r" data-label="Realized">{{ delta(row.realized) }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <div class="glossary reveal">
+        <h3>In plain words</h3>
+        <dl>
+            <div>
+                <dt>Realized</dt>
+                <dd>
+                    What a sale actually earned: the price you sold at, less what
+                    those shares had cost you on average. A gain only becomes real
+                    money once you sell, which is why a buy has no figure here.
+                </dd>
+            </div>
+            <div>
+                <dt>Opening position</dt>
+                <dd>
+                    A holding you already had before this log existed. The shares
+                    and average cost are real; the date is the day your account
+                    was opened, because the original purchase was never recorded.
+                </dd>
+            </div>
+        </dl>
+    </div>
+{% endif %}
+{% endblock %}

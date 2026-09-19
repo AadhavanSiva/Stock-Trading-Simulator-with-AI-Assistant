@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS price_intraday (
 DO $$ BEGIN
     ALTER TABLE price_intraday ADD CONSTRAINT price_intraday_close_sane
         CHECK (close >= 0 AND close <> 'NaN');
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS price_intraday_symbol_ts_idx
