@@ -15,7 +15,7 @@ services/ respectively.
 """
 import logging
 from collections import namedtuple
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from portfolio_tracker import charts
@@ -23,7 +23,7 @@ from portfolio_tracker.errors import (
     InsufficientFunds, MarketDataUnavailable, UnknownUser, ValidationError,
 )
 from portfolio_tracker.models import (
-    assistant_usage, history, portfolio, stocks, trades, users,
+    assistant_usage, history, portfolio, stocks, trades, users, value_history,
 )
 from portfolio_tracker.models.portfolio import to_money
 from portfolio_tracker.services import market_data
@@ -45,6 +45,7 @@ __all__ = [
     "look_up", "buy", "sell", "refresh_prices", "load_all_history",
     "account_summary", "assistant_wait_seconds",
     "recent_activity", "trade_history", "export_account", "delete_account",
+    "record_value_sample", "performance", "percent_return",
 ]
 
 
@@ -420,6 +421,13 @@ def refresh_prices(user_id, on_start=None):
             outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
             failed += 1
 
+    # Sampled after the prices move, not before, so the figure recorded is
+    # the one the refresh just produced. Taken even when every symbol
+    # failed: a flat stretch in the chart is the honest record of a day the
+    # market data could not be reached, and a gap would be read as no
+    # change rather than no reading.
+    record_value_sample(user_id)
+
     return RefreshReport(outcomes, updated, failed, len(symbols))
 
 
@@ -650,6 +658,7 @@ def export_account(user_id):
             "net_worth": _plain(summary.net_worth),
             "unrealized_gain": _plain(summary.total_gain),
             "realized_gain": _plain(summary.realized.total),
+            "percent_return": _plain(percent_return(user_id, summary=summary)),
         },
     }
 
@@ -675,3 +684,77 @@ def delete_account(user_id, confirmation):
         raise UnknownUser("That account no longer exists.")
     log.info("Account %s deleted at the owner's request", user_id)
     return email
+
+
+# --------------------------------------------------- value over time
+
+Performance = namedtuple(
+    "Performance",
+    "chart start_value end_value change percent samples first_at last_at",
+)
+
+
+def record_value_sample(user_id):
+    """Store what the account is worth right now.
+
+    Valued from stored prices, not live ones: this runs straight after a
+    refresh has written them, and re-quoting here would both double the
+    market-data calls and risk recording a figure the page never showed.
+    """
+    summary = account_summary(user_id)
+    return value_history.record(user_id, summary.cash, summary.holdings_value)
+
+
+def percent_return(user_id, summary=None):
+    """Growth against the cash the account opened with.
+
+    Measured from the starting balance rather than the first sample,
+    because that is the question a paper-trading account actually poses:
+    you were handed a fixed sum and nothing is ever paid in or out, so
+    "what did you turn it into" needs no time-weighting to be fair. It also
+    makes two accounts comparable however long each has been open, which is
+    what the leaderboard needs.
+
+    Returns None when the starting balance is zero, rather than dividing.
+    """
+    if summary is None:
+        summary = account_summary(user_id)
+    opening = users.starting_cash()
+    if not opening:
+        return None
+    return (summary.net_worth - opening) / opening * 100
+
+
+def performance(user_id, days=None, width=720, height=220):
+    """The account's value over time, ready to plot.
+
+    Returns None when there is nothing to draw yet — one sample is a dot,
+    not a line, and the page says so instead of rendering an empty frame.
+    """
+    since = None
+    if days:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    rows = value_history.series(user_id, since=since)
+    if len(rows) < 2:
+        return None
+
+    chart = charts.build(
+        [(charts.point_label(recorded_at), total) for recorded_at, _, _, total in rows],
+        width=width, height=height,
+    )
+    if chart is None:
+        return None
+
+    start_value, end_value = rows[0][3], rows[-1][3]
+    change = end_value - start_value
+    return Performance(
+        chart=chart,
+        start_value=start_value,
+        end_value=end_value,
+        change=change,
+        percent=(change / start_value * 100) if start_value else None,
+        samples=len(rows),
+        first_at=rows[0][0],
+        last_at=rows[-1][0],
+    )

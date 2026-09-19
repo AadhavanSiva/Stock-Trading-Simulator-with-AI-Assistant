@@ -196,3 +196,37 @@ DROP TRIGGER IF EXISTS trades_no_rewrite ON trades;
 CREATE TRIGGER trades_no_rewrite
     BEFORE UPDATE OR DELETE ON trades
     FOR EACH ROW EXECUTE FUNCTION trades_append_only();
+
+-- What an account was worth, sampled over time.
+--
+-- Cash plus the market value of the holdings, written whenever prices are
+-- refreshed. This is the only record of the past: `portfolio` holds the
+-- position as it stands now, and nothing else remembers what it was worth
+-- last week, so a performance chart cannot be reconstructed after the fact.
+-- Every sample must therefore be taken at the moment it is true.
+--
+-- The three figures are stored rather than just the total, so a later
+-- reader can tell a gain from a deposit of attention — cash falling while
+-- holdings rise is a purchase, not a loss.
+--
+-- It is also what the leaderboard reads. Ranking accounts by re-pricing
+-- every holding on every page load would mean one market-data pass per
+-- viewer; this table already holds the answer as of the last refresh.
+CREATE TABLE IF NOT EXISTS portfolio_value_history (
+    id             BIGSERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recorded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cash           NUMERIC NOT NULL
+        CONSTRAINT pvh_cash_sane CHECK (cash >= 0 AND cash <> 'NaN'),
+    holdings_value NUMERIC NOT NULL
+        CONSTRAINT pvh_holdings_value_sane
+        CHECK (holdings_value >= 0 AND holdings_value <> 'NaN'),
+    total_value    NUMERIC NOT NULL
+        CONSTRAINT pvh_total_value_sane
+        CHECK (total_value >= 0 AND total_value <> 'NaN')
+);
+
+-- Both reads this serves are "newest first, for one account": the chart
+-- walks back through a window, and the leaderboard takes just the latest.
+CREATE INDEX IF NOT EXISTS portfolio_value_history_user_time_idx
+    ON portfolio_value_history (user_id, recorded_at DESC);

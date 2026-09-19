@@ -90,8 +90,12 @@ def login_required(view):
 def inject_user():
     """Make the signed-in account available to every template."""
     account = getattr(g, "user", None)
+    # The opening balance is context for every figure on the site — a
+    # return means nothing without the number it is measured against — so
+    # it is injected here rather than passed by each route that shows one.
     if account is None:
-        return {"current_user": None, "assistant_enabled": False}
+        return {"current_user": None, "assistant_enabled": False,
+                "starting_cash": users.starting_cash()}
     _, _, email, display_name, cash = account
     return {
         "current_user": {
@@ -99,6 +103,7 @@ def inject_user():
             "display_name": display_name or email,
             "cash": cash,
         },
+        "starting_cash": users.starting_cash(),
         "assistant_enabled": config.ASSISTANT_ENABLED,
         "assistant_research": assistant.research_available(),
     }
@@ -369,10 +374,13 @@ def index():
         return redirect(url_for("login"))
 
     g.user, g.user_id = account, account[0]
+    summary = operations.account_summary(g.user_id)
     return render_template(
         "portfolio.html",
         motion="calm",
-        summary=operations.account_summary(g.user_id),
+        summary=summary,
+        performance=operations.performance(g.user_id),
+        total_return=operations.percent_return(g.user_id, summary=summary),
         # Names the position just traded, so its row settles in rather than
         # appearing without explanation. Identical for a buy and a sell —
         # a trade is a decision, not an achievement.

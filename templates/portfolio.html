@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_delta.html" import delta %}
 {% from "_trades.html" import activity_row %}
+{% from "_performance.html" import performance_chart %}
 {% set active = 'portfolio' %}
 {% block title %}Portfolio · Portfolio Tracker{% endblock %}
 
@@ -57,11 +58,32 @@
             <p class="kpi-foot num">{{ summary.total_percent | percent }} on what you paid</p>
         </div>
         <div class="kpi">
+            <p class="kpi-label">Return</p>
+            <p class="kpi-value">{{ total_return | percent }}</p>
+            <p class="kpi-foot">Against the {{ starting_cash | money }} you started with</p>
+        </div>
+        <div class="kpi">
             <p class="kpi-label">Cash available</p>
             <p class="kpi-value">{{ summary.cash | money }}</p>
             <p class="kpi-foot">Buying power</p>
         </div>
     </section>
+
+    {% if performance %}
+        <div class="panel reveal">
+            <div class="panel-head panel-head-row">
+                <div>
+                    <h2>Value over time</h2>
+                    <p class="faint">
+                        {{ '{:,}'.format(performance.samples) }} readings, each taken
+                        when prices were refreshed
+                    </p>
+                </div>
+                <div class="chart-change">{{ delta(performance.change, performance.percent) }}</div>
+            </div>
+            {{ performance_chart(performance) }}
+        </div>
+    {% endif %}
 
     <div class="grid-main">
         <div class="panel panel-flush">
