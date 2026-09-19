@@ -831,7 +831,8 @@ def history_view():
     highs_lows = {symbol: (high, low) for symbol, high, low in history.get_high_low()}
 
     rows = []
-    for symbol, name, held, paid, current, gain in portfolio.get_holdings_with_details(g.user_id):
+    for (symbol, name, held, paid, current, gain,
+         _previous_close) in portfolio.get_holdings_with_details(g.user_id):
         high, low = highs_lows.get(symbol, (None, None))
         rows.append({
             "symbol": symbol,

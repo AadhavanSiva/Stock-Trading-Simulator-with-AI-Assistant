@@ -274,7 +274,8 @@ class TestEarlierTurns:
 
 
 def quote(price="332.27", name="Apple Inc."):
-    return patch.object(market_data, "get_quote", return_value=(Decimal(price), name))
+    return patch.object(market_data, "get_quote",
+                        return_value=(Decimal(price), name, None))
 
 
 class TestContext:
@@ -297,7 +298,7 @@ class TestContext:
         assert "tester@example.com" not in context and "Tester" not in context
 
     def test_unknown_ticker_is_stated_not_invented(self, user):
-        with patch.object(market_data, "get_quote", return_value=(None, "X")):
+        with patch.object(market_data, "get_quote", return_value=(None, "X", None)):
             context = operations.assistant_context(user, "NOPE")
         assert "No market data could be found for NOPE" in context
 

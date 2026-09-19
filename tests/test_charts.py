@@ -279,7 +279,8 @@ class TestIntraday:
 
 
 def quote(price, name="Apple Inc."):
-    return patch.object(market_data, "get_quote", return_value=(Decimal(str(price)), name))
+    return patch.object(market_data, "get_quote",
+                        return_value=(Decimal(str(price)), name, None))
 
 
 class TestStockPage:
@@ -365,7 +366,7 @@ class TestStockPage:
         assert 'action="/stock/AAPL/fetch"' in body
 
     def test_unknown_ticker_goes_back_to_buy_with_a_message(self, client):
-        with patch.object(market_data, "get_quote", return_value=(None, "X")):
+        with patch.object(market_data, "get_quote", return_value=(None, "X", None)):
             response = client.get("/stock/NOPE", follow_redirects=True)
         assert "No market data found" in text(response)
 

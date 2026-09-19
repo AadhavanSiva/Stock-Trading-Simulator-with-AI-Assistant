@@ -1,7 +1,7 @@
 from portfolio_tracker.db import cursor
 
 
-def upsert_stock(symbol, company_name, current_price):
+def upsert_stock(symbol, company_name, current_price, previous_close=None):
     """Insert a stock, refreshing its name and price if it already exists.
 
     This used to be ON CONFLICT DO NOTHING, which meant a symbol added a
@@ -12,22 +12,33 @@ def upsert_stock(symbol, company_name, current_price):
     with cursor(commit=True) as cur:
         cur.execute(
             """
-            INSERT INTO stocks (symbol, company_name, current_price)
-            VALUES (%s, %s, %s)
+            INSERT INTO stocks (symbol, company_name, current_price, previous_close)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (symbol) DO UPDATE SET
-                company_name  = COALESCE(EXCLUDED.company_name, stocks.company_name),
-                current_price = COALESCE(EXCLUDED.current_price, stocks.current_price)
+                company_name   = COALESCE(EXCLUDED.company_name, stocks.company_name),
+                current_price  = COALESCE(EXCLUDED.current_price, stocks.current_price),
+                previous_close = COALESCE(EXCLUDED.previous_close, stocks.previous_close)
             """,
-            (symbol, company_name, current_price)
+            (symbol, company_name, current_price, previous_close)
         )
 
 
-def update_stock_price(symbol, price):
-    """Update a symbol's current price. Returns True if the symbol existed."""
+def update_stock_price(symbol, price, previous_close=None):
+    """Update a symbol's current price. Returns True if the symbol existed.
+
+    `previous_close` is written only when one was supplied: a refresh that
+    could not obtain it must leave the stored value alone rather than
+    blanking a figure the page is already showing.
+    """
     with cursor(commit=True) as cur:
         cur.execute(
-            "UPDATE stocks SET current_price = %s WHERE symbol = %s",
-            (price, symbol)
+            """
+            UPDATE stocks
+            SET current_price  = %s,
+                previous_close = COALESCE(%s, previous_close)
+            WHERE symbol = %s
+            """,
+            (price, previous_close, symbol)
         )
         return cur.rowcount > 0
 

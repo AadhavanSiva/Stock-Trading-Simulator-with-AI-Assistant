@@ -3,6 +3,7 @@
 Market data is mocked, so these run offline. The database fixtures come
 from conftest and point at the throwaway test database.
 """
+import contextlib
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -17,12 +18,20 @@ STARTING = Decimal("50000")
 
 def quote(price, name="Test Company Inc."):
     value = Decimal(str(price)) if price is not None else None
-    return patch.object(market_data, "get_quote", return_value=(value, name))
+    return patch.object(market_data, "get_quote", return_value=(value, name, None))
 
 
-def live_price(price):
+@contextlib.contextmanager
+def live_price(price, name="Test Company Inc."):
+    """Stand in for a live lookup, whichever entry point is used.
+
+    Selling calls get_live_price; refreshing calls get_quote, because it
+    stores the previous close beside the price. Patching both keeps the
+    helper honest about what it is standing in for.
+    """
     value = Decimal(str(price)) if price is not None else None
-    return patch.object(market_data, "get_live_price", return_value=value)
+    with patch.object(market_data, "get_live_price", return_value=value),          patch.object(market_data, "get_quote", return_value=(value, name, None)):
+        yield
 
 
 def own(user_id, symbol, shares, price, name="Test Company Inc."):
@@ -363,8 +372,9 @@ class TestActions:
     def test_refresh_reports_failures_without_stopping(self, client, user):
         own(user, "AAPL", 10, 100)
         own(user, "BBB", 5, 50)
-        with patch.object(market_data, "get_live_price",
-                          side_effect=[Decimal("150"), None]):
+        with patch.object(market_data, "get_quote",
+                          side_effect=[(Decimal("150"), "A", None),
+                                       (None, "B", None)]):
             body = text(client.post("/actions/refresh-prices"))
         assert "Refreshed 1 of 2" in body
         assert "1 could not be updated" in body

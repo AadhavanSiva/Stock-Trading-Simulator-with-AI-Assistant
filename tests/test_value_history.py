@@ -79,8 +79,8 @@ class TestRefreshTakesASample:
                                   Decimal("100"), Decimal("10"))
         before = value_history.count(seeded)
 
-        with patch("portfolio_tracker.services.market_data.get_live_price",
-                   return_value=Decimal("120")):
+        with patch("portfolio_tracker.services.market_data.get_quote",
+                   return_value=(Decimal("120"), "Apple Inc.", Decimal("118"))):
             operations.refresh_prices(seeded)
 
         assert value_history.count(seeded) == before + 1
@@ -89,8 +89,8 @@ class TestRefreshTakesASample:
         """Taken after the prices move, not before."""
         portfolio.record_purchase(seeded, "AAPL", "Apple Inc.",
                                   Decimal("100"), Decimal("10"))
-        with patch("portfolio_tracker.services.market_data.get_live_price",
-                   return_value=Decimal("120")):
+        with patch("portfolio_tracker.services.market_data.get_quote",
+                   return_value=(Decimal("120"), "Apple Inc.", Decimal("118"))):
             operations.refresh_prices(seeded)
 
         _, _, holdings, _ = value_history.latest(seeded)
@@ -104,7 +104,7 @@ class TestRefreshTakesASample:
                                   Decimal("100"), Decimal("10"))
         before = value_history.count(seeded)
 
-        with patch("portfolio_tracker.services.market_data.get_live_price",
+        with patch("portfolio_tracker.services.market_data.get_quote",
                    side_effect=MarketDataUnavailable("AAPL")):
             report = operations.refresh_prices(seeded)
 

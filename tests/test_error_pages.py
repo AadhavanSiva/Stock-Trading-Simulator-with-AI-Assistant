@@ -133,7 +133,8 @@ class TestYahooErrorTextNeverReachesAPerson:
 
     def test_chart_fetch(self, client):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
-        with patch.object(market_data, "get_quote", return_value=(Decimal("100"), "Apple Inc.")), yahoo_down():
+        with patch.object(market_data, "get_quote",
+                          return_value=(Decimal("100"), "Apple Inc.", None)), yahoo_down():
             body = text(client.post("/stock/AAPL/fetch", data={"range": "1y"}, follow_redirects=True))
         assert "Could not fetch prices for AAPL. Yahoo Finance didn" in body
         assert "Fetched 0" not in body

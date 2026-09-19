@@ -78,12 +78,13 @@ Purchase = namedtuple(
 )
 Sale = namedtuple("Sale", "symbol shares price proceeds gain remaining closed cash")
 Quote = namedtuple(
-    "Quote", "symbol company_name price owned average_cost cash affordable"
+    "Quote",
+    "symbol company_name price owned average_cost cash affordable previous_close"
 )
 Summary = namedtuple(
     "Summary",
     "rows unpriced cash holdings_value total_cost total_gain total_percent net_worth "
-    "realized activity",
+    "realized activity todays_change todays_percent",
 )
 TradeRow = namedtuple(
     "TradeRow",
@@ -173,7 +174,7 @@ def look_up(user_id, symbol, fresh=False):
         raise ValidationError("Enter a ticker symbol.")
 
     try:
-        price, company_name = market_data.get_quote(symbol, fresh=fresh)
+        price, company_name, previous_close = market_data.get_quote(symbol, fresh=fresh)
     except Exception as exc:
         raise ValidationError(_market_failure(symbol, exc)) from exc
 
@@ -187,7 +188,7 @@ def look_up(user_id, symbol, fresh=False):
     cash = users.get_cash(user_id)
     return Quote(
         symbol, company_name, price, owned, average_cost,
-        cash, affordable_maximum(cash, price),
+        cash, affordable_maximum(cash, price), previous_close,
     )
 
 
@@ -268,8 +269,11 @@ def account_summary(user_id):
     priced_cost = Decimal(0)
     unpriced = []
 
+    todays_change = Decimal(0)
+    todays_basis = Decimal(0)
+
     holdings = portfolio.get_holdings_with_details(user_id)
-    for symbol, name, held, paid, current, gain in holdings:
+    for symbol, name, held, paid, current, gain, previous_close in holdings:
         cost = held * paid
         row = {
             "symbol": symbol,
@@ -281,6 +285,9 @@ def account_summary(user_id):
             "value": None,
             "gain_loss": None,
             "percent": None,
+            "previous_close": previous_close,
+            "todays_change": None,
+            "todays_percent": None,
         }
         if current is None:
             unpriced.append(symbol)
@@ -290,6 +297,19 @@ def account_summary(user_id):
             row["percent"] = (gain / cost * 100) if cost else Decimal(0)
             holdings_value += row["value"]
             priced_cost += cost
+
+            # Today's move, where a previous close is known. A position
+            # bought this morning has no close to compare against, and its
+            # change stays None rather than becoming a zero that reads as
+            # "unchanged today".
+            if previous_close is not None:
+                row["todays_change"] = (current - previous_close) * held
+                row["todays_percent"] = (
+                    (current - previous_close) / previous_close * 100
+                    if previous_close else None
+                )
+                todays_change += row["todays_change"]
+                todays_basis += previous_close * held
         rows.append(row)
 
     # Realized gain is read from the trade log, which is the only place it
@@ -314,6 +334,10 @@ def account_summary(user_id):
         net_worth=cash + holdings_value,
         realized=realized,
         activity=recent_activity(user_id),
+        # None, not zero, when nothing held has a previous close yet: the
+        # honest answer is "not known", and a zero would claim a flat day.
+        todays_change=todays_change if todays_basis else None,
+        todays_percent=(todays_change / todays_basis * 100) if todays_basis else None,
     )
 
 
@@ -409,12 +433,14 @@ def refresh_prices(user_id, on_start=None):
         if on_start:
             on_start(symbol)
         try:
-            price = market_data.get_live_price(symbol, fresh=True)
+            price, _, previous_close = market_data.get_quote(symbol, fresh=True)
             if price is None:
                 outcomes.append(SymbolOutcome(symbol, False, "no price data available"))
                 failed += 1
                 continue
-            stocks.update_stock_price(symbol, price)
+            # Both from the one quote, so the close and the price they are
+            # compared against describe the same moment.
+            stocks.update_stock_price(symbol, price, previous_close=previous_close)
             outcomes.append(SymbolOutcome(symbol, True, f"${price:,.2f}"))
             updated += 1
         except Exception as exc:

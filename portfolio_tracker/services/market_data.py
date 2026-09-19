@@ -71,10 +71,16 @@ def clear_quote_cache():
 
 
 def get_quote(symbol, fresh=False):
-    """Fetch price and company name in one lookup.
+    """Fetch price, company name and previous close in one lookup.
 
-    Returns (price, company_name); price is None when the symbol has no
-    usable quote. Raises MarketDataUnavailable when Yahoo cannot be reached.
+    Returns (price, company_name, previous_close); price is None when the
+    symbol has no usable quote, and previous_close is None when Yahoo does
+    not report one. Raises MarketDataUnavailable when Yahoo cannot be
+    reached.
+
+    All three come from the same call deliberately: "today's change" is the
+    difference between two of them, and taking them from separate lookups
+    would measure across a window nobody asked for.
 
     A result is reused for QUOTE_CACHE_SECONDS unless `fresh` is set.
     Anything that trades, or that the reader asked to refresh, passes
@@ -116,7 +122,15 @@ def _fetch_quote(symbol):
 
     price = _to_decimal(info.get("currentPrice") or info.get("regularMarketPrice"))
     name = info.get("longName") or info.get("shortName") or symbol
-    return price, name
+    # regularMarketPreviousClose is the field Yahoo keeps populated outside
+    # market hours too; previousClose is the older spelling and is still
+    # present on some symbols, so both are tried.
+    previous_close = _to_decimal(
+        info.get("regularMarketPreviousClose")
+        if info.get("regularMarketPreviousClose") is not None
+        else info.get("previousClose")
+    )
+    return price, name, previous_close
 
 
 def get_live_price(symbol, fresh=False):
@@ -126,6 +140,11 @@ def get_live_price(symbol, fresh=False):
 
 def get_company_name(symbol):
     return get_quote(symbol)[1]
+
+
+def get_previous_close(symbol, fresh=False):
+    """The previous session's close, or None if Yahoo did not report one."""
+    return get_quote(symbol, fresh=fresh)[2]
 
 
 # ----------------------------------------------------------------- history

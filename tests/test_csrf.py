@@ -49,7 +49,8 @@ def token_from(c, path="/buy"):
 
 
 def quote(price="100", name="Test Company Inc."):
-    return patch.object(market_data, "get_quote", return_value=(Decimal(price), name))
+    return patch.object(market_data, "get_quote",
+                        return_value=(Decimal(price), name, None))
 
 
 def own(user, shares="10", price="100"):

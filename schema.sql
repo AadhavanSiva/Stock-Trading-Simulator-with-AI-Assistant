@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS stocks (
     current_price NUMERIC
         CONSTRAINT stocks_current_price_sane
         CHECK (current_price IS NULL OR (current_price >= 0 AND current_price <> 'NaN')),
+    -- The previous session's closing price, which is what "today's change"
+    -- is measured from. It comes from the same quote as current_price and
+    -- is stored beside it, because the two have to describe the same
+    -- moment: taking the close from a later lookup than the price would
+    -- report a change across a window nobody asked about.
+    previous_close NUMERIC
+        CONSTRAINT stocks_previous_close_sane
+        CHECK (previous_close IS NULL OR (previous_close >= 0 AND previous_close <> 'NaN')),
     -- When every available day was last downloaded. NULL means only a
     -- partial window is stored, so an "all time" chart must say so rather
     -- than present six months as the whole history.

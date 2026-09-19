@@ -29,7 +29,7 @@ class TestToDecimal:
 class TestGetQuote:
     def test_returns_decimal_price_and_name(self):
         with with_info({"currentPrice": 332.27, "longName": "Apple Inc."}):
-            price, name = market_data.get_quote("AAPL")
+            price, name, previous_close = market_data.get_quote("AAPL")
         assert price == Decimal("332.27")
         assert isinstance(price, Decimal)
         assert name == "Apple Inc."
@@ -53,8 +53,8 @@ class TestGetQuote:
 
     def test_empty_info_is_handled(self):
         with with_info({}):
-            assert market_data.get_quote("XYZ") == (None, "XYZ")
+            assert market_data.get_quote("XYZ") == (None, "XYZ", None)
 
     def test_none_info_is_handled(self):
         with with_info(None):
-            assert market_data.get_quote("XYZ") == (None, "XYZ")
+            assert market_data.get_quote("XYZ") == (None, "XYZ", None)

@@ -27,7 +27,8 @@ def store_daily(symbol, closes, start):
 
 
 def quote(price="120", name="Apple Inc."):
-    return patch.object(market_data, "get_quote", return_value=(Decimal(price), name))
+    return patch.object(market_data, "get_quote",
+                        return_value=(Decimal(price), name, None))
 
 
 class TestPriceAxis:
