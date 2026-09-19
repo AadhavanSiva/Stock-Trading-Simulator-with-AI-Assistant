@@ -15,7 +15,25 @@ CREATE TABLE IF NOT EXISTS users (
     cash         NUMERIC NOT NULL DEFAULT 50000
         CONSTRAINT users_cash_sane
         CHECK (cash >= 0 AND cash <> 'NaN'),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Appearing on the leaderboard is opt-in, and off until someone says
+    -- otherwise. A default of TRUE would publish the standing of every
+    -- account that existed before the feature did, none of which agreed
+    -- to anything.
+    leaderboard_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+    -- The name shown there, chosen for the purpose. The leaderboard never
+    -- renders `email` or `display_name`: both come from Google and are
+    -- usually a real name and a real address, which nobody supplied in
+    -- order to have them published next to their net worth.
+    leaderboard_name TEXT
+        CONSTRAINT users_leaderboard_name_present
+        CHECK (leaderboard_name IS NULL OR length(btrim(leaderboard_name)) > 0),
+    -- Opting in without choosing a name would leave the row with nothing
+    -- safe to display, so the database refuses that combination outright
+    -- rather than leaving the view to pick a fallback — and the obvious
+    -- fallback is exactly the address we are trying not to publish.
+    CONSTRAINT users_leaderboard_needs_a_name
+        CHECK (NOT leaderboard_opt_in OR leaderboard_name IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS stocks (

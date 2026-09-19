@@ -165,6 +165,45 @@ def set_cash(user_id, amount):
         return row[0]
 
 
+def get_leaderboard_settings(user_id):
+    """Returns (opted_in, leaderboard_name) for one account."""
+    with cursor() as cur:
+        cur.execute(
+            "SELECT leaderboard_opt_in, leaderboard_name FROM users WHERE id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise UnknownUser(f"No account with id {user_id}.")
+        return row
+
+
+def set_leaderboard_settings(user_id, opt_in, leaderboard_name=None):
+    """Join or leave the leaderboard, and set the name shown there.
+
+    Opting out keeps the chosen name, so someone who leaves and rejoins is
+    not made to invent a new one. The database refuses opted-in with no
+    name, which is what stops the view ever having to fall back to the
+    email address.
+    """
+    name = (leaderboard_name or "").strip() or None
+    with cursor(commit=True) as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET leaderboard_opt_in = %s,
+                leaderboard_name = COALESCE(%s, leaderboard_name)
+            WHERE id = %s
+            RETURNING leaderboard_opt_in, leaderboard_name
+            """,
+            (bool(opt_in), name, user_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise UnknownUser(f"No account with id {user_id}.")
+        return row
+
+
 def delete_account(user_id):
     """Erase an account and everything belonging to it, in one transaction.
 

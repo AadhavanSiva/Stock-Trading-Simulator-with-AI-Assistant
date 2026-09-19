@@ -1199,3 +1199,15 @@ textarea { resize: vertical; line-height: 1.45; }
     .activity-when { grid-column: 1 / -1; }
     .pager { flex-wrap: wrap; justify-content: center; }
 }
+
+/* ------------------------------------------------------- leaderboard --- */
+
+/* The viewer's own row, marked by weight and a rule rather than a fill:
+   a highlighted band would read as a warning on a table of results. */
+tr.is-you > td { background: var(--color-surface-2); font-weight: 600; }
+tr.is-you > td:first-child { box-shadow: inset 3px 0 0 var(--color-brand); }
+
+.panel-quiet { background: var(--color-surface-2); box-shadow: none; }
+
+.checkline { display: flex; align-items: center; gap: var(--s2); font-weight: 400; }
+.checkline input { width: auto; min-height: 0; }

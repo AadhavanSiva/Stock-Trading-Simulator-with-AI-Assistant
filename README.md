@@ -24,6 +24,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
 - A performance chart of account value over time, and a percent return measured against the opening balance
 - Today's change per position and for the account overall, measured from the previous close
+- An opt-in leaderboard showing a chosen nickname, account value and return — never a real name, email address, holding, trade or cash balance
 - Realized gain per position and overall, computed from that log, kept distinct from the unrealized gain on what is still held
 - "Recent activity" on the portfolio page and a full, paged trade history
 - Account deletion that actually deletes: one transaction, a typed confirmation, and no orphaned rows left behind
@@ -43,7 +44,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 
 ## Database Schema
 
-- `users` — one row per account: Google's `sub` claim, email, display name, and cash balance
+- `users` — one row per account: Google's `sub` claim, email, display name, cash balance, and the two leaderboard settings. `leaderboard_opt_in` defaults to `FALSE`, and a `CHECK` refuses an opted-in row with no `leaderboard_name` — otherwise the view would need a fallback, and the obvious fallback is the email address the feature exists to keep off the page.
 - `stocks` — reference data per ticker (symbol, company name, latest price, and the previous session's close), shared by all accounts. The close is written from the same quote as the price, because "today's change" is the difference between the two and taking them from separate lookups would measure across a window nobody asked for.
 - `portfolio` — holdings (owner, symbol, shares, purchase price). `UNIQUE (user_id, symbol)`: one row per ticker *per account*, so a repeat buy blends into a weighted-average cost basis rather than opening a second lot. The `user_id` in that constraint is load-bearing — a bare `UNIQUE (symbol)` would collide across accounts and hand one person another person's position.
 - `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run. `symbol` is `NOT NULL`, which that constraint depends on: PostgreSQL treats NULLs as distinct in a `UNIQUE`, so a nullable column there would let the same day be re-inserted forever and quietly undo the re-run guarantee.
@@ -64,6 +65,7 @@ portfolio_tracker/
         history.py         daily OHLCV
         trades.py          the append-only trade log
         value_history.py   account value sampled over time
+        leaderboard.py     standings, read from those samples
         users.py           accounts and cash balances
     services/
         market_data.py     the only module that talks to yfinance

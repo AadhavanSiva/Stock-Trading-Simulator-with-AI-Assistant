@@ -41,6 +41,7 @@
                 <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active" aria-current="page"{% endif %}>Buy</a>
                 <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active" aria-current="page"{% endif %}>Sell</a>
                 <a href="{{ url_for('trades_view') }}"  {% if active == 'trades' %}class="is-active" aria-current="page"{% endif %}>Activity</a>
+                <a href="{{ url_for('leaderboard_view') }}" {% if active == 'leaderboard' %}class="is-active" aria-current="page"{% endif %}>Leaderboard</a>
                 <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active" aria-current="page"{% endif %}>History</a>
                 <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active" aria-current="page"{% endif %}>Update</a>
             </nav>

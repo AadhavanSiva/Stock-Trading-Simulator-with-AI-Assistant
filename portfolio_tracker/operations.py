@@ -23,7 +23,8 @@ from portfolio_tracker.errors import (
     InsufficientFunds, MarketDataUnavailable, UnknownUser, ValidationError,
 )
 from portfolio_tracker.models import (
-    assistant_usage, history, portfolio, stocks, trades, users, value_history,
+    assistant_usage, history, leaderboard, portfolio, stocks, trades, users,
+    value_history,
 )
 from portfolio_tracker.models.portfolio import to_money
 from portfolio_tracker.services import market_data
@@ -46,6 +47,7 @@ __all__ = [
     "account_summary", "assistant_wait_seconds",
     "recent_activity", "trade_history", "export_account", "delete_account",
     "record_value_sample", "performance", "percent_return",
+    "leaderboard_standings", "my_standing", "set_leaderboard_participation",
 ]
 
 
@@ -783,4 +785,95 @@ def performance(user_id, days=None, width=720, height=220):
         samples=len(rows),
         first_at=rows[0][0],
         last_at=rows[-1][0],
+    )
+
+
+# ------------------------------------------------------------ leaderboard
+
+LeaderboardRow = namedtuple(
+    "LeaderboardRow", "rank name total_value percent_return is_you"
+)
+Standing = namedtuple(
+    "Standing", "rank total_value percent_return opted_in participants as_of"
+)
+
+# Long enough to be distinctive, short enough to sit in a table cell.
+LEADERBOARD_NAME_MAX = 24
+
+
+def _return_on(total_value):
+    """Percent growth of a total against the opening balance."""
+    opening = users.starting_cash()
+    if not opening or total_value is None:
+        return None
+    return (Decimal(total_value) - opening) / opening * 100
+
+
+def validate_leaderboard_name(name, user_id=None):
+    """Check a chosen leaderboard name, or explain why it will not do.
+
+    An email address is rejected outright rather than trimmed into shape:
+    someone typing one has misunderstood what this field is for, and the
+    whole point of it is that no address reaches the page.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValidationError("Choose a name to appear under.")
+    if len(name) > LEADERBOARD_NAME_MAX:
+        raise ValidationError(
+            f"That name is too long — {LEADERBOARD_NAME_MAX} characters at most."
+        )
+    if "@" in name:
+        raise ValidationError(
+            "Please choose a nickname rather than an email address. The "
+            "leaderboard is public to other players, and this is the only "
+            "thing they see."
+        )
+    if leaderboard.name_taken(name, excluding_user_id=user_id):
+        raise ValidationError("Someone is already using that name. Try another.")
+    return name
+
+
+def set_leaderboard_participation(user_id, opt_in, name=None):
+    """Join or leave the leaderboard.
+
+    Joining requires a name; leaving does not, and keeps whatever was
+    chosen so rejoining need not start over.
+    """
+    if opt_in:
+        name = validate_leaderboard_name(name, user_id=user_id)
+    return users.set_leaderboard_settings(user_id, opt_in, leaderboard_name=name)
+
+
+def leaderboard_standings(user_id=None, limit=50):
+    """The public table: a name, a total and a return, and nothing else."""
+    rows = []
+    for rank, row_user_id, name, total_value, _ in leaderboard.standings(limit=limit):
+        rows.append(LeaderboardRow(
+            rank=rank,
+            name=name,
+            total_value=total_value,
+            percent_return=_return_on(total_value),
+            is_you=(user_id is not None and row_user_id == user_id),
+        ))
+    return rows
+
+
+def my_standing(user_id):
+    """Where one account stands, opted in or not.
+
+    Returns None when the account has never been valued — a refresh has to
+    have happened before there is anything to rank.
+    """
+    row = leaderboard.standing_for(user_id)
+    if row is None:
+        return None
+    rank, total_value, recorded_at, opted_in, participants = row
+    return Standing(
+        rank=rank,
+        total_value=total_value,
+        percent_return=_return_on(total_value),
+        opted_in=opted_in,
+        participants=participants,
+        as_of=recorded_at,
     )

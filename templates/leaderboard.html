@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% from "_delta.html" import delta %}
+{% set active = 'leaderboard' %}
+{% block title %}Leaderboard · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">Everyone who opted in</span>
+    <h1>Leaderboard</h1>
+</div>
+
+{# What is shown, stated on the page rather than only in a policy. Someone
+   deciding whether to join should be able to see the answer while they
+   decide, not have to go looking for it. #}
+<div class="panel panel-quiet">
+    <p class="faint" style="margin:0">
+        Only a chosen name, total account value and return are listed —
+        never real names, email addresses, holdings, trades or cash. Taking
+        part is optional and off until you turn it on, and you can leave at
+        any time from your <a href="{{ url_for('account') }}">account page</a>.
+    </p>
+</div>
+
+{% if standing %}
+    <section class="kpis" aria-label="Your standing">
+        <div class="kpi">
+            <p class="kpi-label">Your rank</p>
+            <p class="kpi-value num">
+                {{ standing.rank }}<span class="faint">/{{ standing.participants }}</span>
+            </p>
+            <p class="kpi-foot">
+                {% if standing.opted_in %}
+                    You are listed below
+                {% else %}
+                    Where you would come if you joined
+                {% endif %}
+            </p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Your account value</p>
+            <p class="kpi-value">{{ standing.total_value | money }}</p>
+            <p class="kpi-foot num" data-utc="{{ standing.as_of.isoformat() }}">
+                as of {{ standing.as_of | long_datetime }}
+            </p>
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Your return</p>
+            <p class="kpi-value">{{ standing.percent_return | percent }}</p>
+            <p class="kpi-foot">Against the {{ starting_cash | money }} you started with</p>
+        </div>
+    </section>
+
+    {% if not standing.opted_in %}
+        <div class="panel">
+            <p>
+                You are not on the leaderboard. Nobody else can see your rank,
+                your account value or your return until you choose to appear.
+            </p>
+            <div class="actions">
+                <a class="btn btn-secondary" href="{{ url_for('account') }}">Join from your account page</a>
+            </div>
+        </div>
+    {% endif %}
+{% else %}
+    <div class="panel">
+        <p class="faint" style="margin:0">
+            Your account has not been valued yet, so there is nothing to rank.
+            <a href="{{ url_for('actions') }}">Refresh prices</a> and it will appear.
+        </p>
+    </div>
+{% endif %}
+
+{% if not rows %}
+    <div class="panel">
+        <div class="empty">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>Nobody has joined yet</h2>
+            <p>
+                The leaderboard lists only people who have opted in, and so far
+                that is nobody. It is not a measure of who is here — just of who
+                chose to be listed.
+            </p>
+        </div>
+    </div>
+{% else %}
+    <div class="panel panel-flush">
+        <div class="panel-head">
+            <h2>Standings</h2>
+            <p class="faint">
+                {{ rows | length }} {{ 'player' if rows | length == 1 else 'players' }},
+                valued at the last price refresh
+            </p>
+        </div>
+        <div class="table-scroll" style="margin-top:var(--s3)">
+            <table class="stack-on-mobile">
+                <caption class="visually-hidden">
+                    Leaderboard standings, highest account value first.
+                </caption>
+                <thead>
+                <tr>
+                    <th scope="col" class="r">#</th>
+                    <th scope="col">Name</th>
+                    <th scope="col" class="r">Account value</th>
+                    <th scope="col" class="r">Return</th>
+                </tr>
+                </thead>
+                <tbody class="stagger">
+                {% for row in rows %}
+                    <tr {% if row.is_you %}class="is-you"{% endif %}>
+                        <td class="r num" data-label="Rank">{{ row.rank }}</td>
+                        <td data-label="Name">
+                            {{ row.name }}
+                            {% if row.is_you %}<span class="side-tag">You</span>{% endif %}
+                        </td>
+                        <td class="r num" data-label="Account value">{{ row.total_value | money }}</td>
+                        <td class="r num" data-label="Return">{{ row.percent_return | percent }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+<div class="glossary reveal">
+    <h3>In plain words</h3>
+    <dl>
+        <div>
+            <dt>Account value</dt>
+            <dd>Cash plus what the holdings are worth, as of the last time prices were refreshed. It is not live.</dd>
+        </div>
+        <div>
+            <dt>Return</dt>
+            <dd>Growth against the {{ starting_cash | money }} every account starts with, so a new account and an old one are compared on the same terms.</dd>
+        </div>
+    </dl>
+</div>
+{% endblock %}

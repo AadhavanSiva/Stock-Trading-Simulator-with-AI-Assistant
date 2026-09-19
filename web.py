@@ -860,17 +860,62 @@ def trades_view():
     )
 
 
+# ------------------------------------------------------------ leaderboard
+
+@app.route("/leaderboard")
+@login_required
+def leaderboard_view():
+    """Ranked by account value, among those who asked to be listed.
+
+    The viewer's own standing is shown whether or not they opted in: the
+    question "where would I come" is the one that makes the choice to join
+    an informed one.
+    """
+    return render_template(
+        "leaderboard.html",
+        motion="calm",
+        rows=operations.leaderboard_standings(user_id=g.user_id),
+        standing=operations.my_standing(g.user_id),
+    )
+
+
+@app.route("/account/leaderboard", methods=["POST"])
+@login_required
+def account_leaderboard():
+    """Join or leave the leaderboard, from account settings."""
+    joining = request.form.get("opt_in") == "on"
+    try:
+        operations.set_leaderboard_participation(
+            g.user_id, joining, name=request.form.get("leaderboard_name")
+        )
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account"))
+
+    flash(
+        "You are on the leaderboard now." if joining
+        else "You have been taken off the leaderboard.",
+        "success",
+    )
+    return redirect(url_for("account"))
+
+
 # ---------------------------------------------------------------- account
 
 @app.route("/account")
 @login_required
 def account():
     """Where the account itself is managed: taking the data out, or ending it."""
+    opted_in, leaderboard_name = users.get_leaderboard_settings(g.user_id)
     return render_template(
         "account.html",
         motion="calm",
         trade_count=operations.trade_history(g.user_id, page=1, page_size=1).total,
         confirmation=operations.DELETE_CONFIRMATION,
+        leaderboard_opt_in=opted_in,
+        leaderboard_name=leaderboard_name,
+        leaderboard_name_max=operations.LEADERBOARD_NAME_MAX,
+        standing=operations.my_standing(g.user_id),
     )
 
 
