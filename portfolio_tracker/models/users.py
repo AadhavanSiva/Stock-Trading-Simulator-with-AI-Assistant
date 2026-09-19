@@ -136,9 +136,21 @@ def get_cash(user_id):
 
 
 def set_cash(user_id, amount):
-    """Set a balance outright. For resets and corrections, not for trading —
-    buys and sells move cash inside their own transaction so the money and
-    the shares can never disagree."""
+    """Set a balance outright. For resets and corrections, not for trading.
+
+    HAZARD, if you are about to call this from something that trades: this
+    is a blind write. It does not lock the account row, so it does not read
+    the balance it overwrites — a trade committing between your read and
+    this UPDATE is silently discarded, and the cash then disagrees with the
+    trade log that says it moved. It also takes the `users` lock without
+    taking `portfolio` first or second, so mixing it into a trading path
+    reintroduces the lock-ordering deadlock that record_purchase and
+    record_sale were aligned to avoid.
+
+    Buying and selling move cash inside the same transaction as the shares
+    (see models/portfolio.py); anything that trades belongs there, not
+    here. Today this is called only from tests.
+    """
     amount = Decimal(amount)
     if not amount.is_finite() or amount < 0:
         raise ValueError("Cash balance must be a non-negative number.")

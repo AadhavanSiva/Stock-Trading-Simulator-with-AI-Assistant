@@ -52,13 +52,28 @@ CREATE INDEX IF NOT EXISTS portfolio_user_idx ON portfolio (user_id);
 -- deliberately not per-user.
 CREATE TABLE IF NOT EXISTS price_history (
     id      SERIAL PRIMARY KEY,
-    symbol  TEXT REFERENCES stocks(symbol),
+    -- NOT NULL is load-bearing next to the UNIQUE below: PostgreSQL treats
+    -- NULLs as distinct in a unique constraint, so a nullable symbol would
+    -- let the same day be inserted over and over and quietly break the
+    -- "safe to re-run" guarantee the loader depends on.
+    symbol  TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
     date    DATE NOT NULL,
-    open    NUMERIC,
-    high    NUMERIC,
-    low     NUMERIC,
-    close   NUMERIC,
-    volume  BIGINT,
+    -- The OHLC columns stay nullable: Yahoo genuinely leaves gaps, and the
+    -- readers already filter them. What they must never hold is a NaN.
+    -- 'NaN'::numeric sorts ABOVE every other numeric, so one bad cell makes
+    -- MAX(close) return NaN and every high on the history page becomes NaN
+    -- with nothing to show where it came from. The Python loader filters
+    -- NaN too; this is the guarantee, that is the convenience.
+    open    NUMERIC CONSTRAINT price_history_open_sane
+            CHECK (open IS NULL OR (open >= 0 AND open <> 'NaN')),
+    high    NUMERIC CONSTRAINT price_history_high_sane
+            CHECK (high IS NULL OR (high >= 0 AND high <> 'NaN')),
+    low     NUMERIC CONSTRAINT price_history_low_sane
+            CHECK (low IS NULL OR (low >= 0 AND low <> 'NaN')),
+    close   NUMERIC CONSTRAINT price_history_close_sane
+            CHECK (close IS NULL OR (close >= 0 AND close <> 'NaN')),
+    volume  BIGINT CONSTRAINT price_history_volume_sane
+            CHECK (volume IS NULL OR volume >= 0),
     UNIQUE (symbol, date)
 );
 

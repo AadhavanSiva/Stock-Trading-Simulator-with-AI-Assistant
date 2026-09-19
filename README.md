@@ -44,10 +44,10 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - `users` — one row per account: Google's `sub` claim, email, display name, and cash balance
 - `stocks` — reference data per ticker (symbol, company name, latest price), shared by all accounts
 - `portfolio` — holdings (owner, symbol, shares, purchase price). `UNIQUE (user_id, symbol)`: one row per ticker *per account*, so a repeat buy blends into a weighted-average cost basis rather than opening a second lot. The `user_id` in that constraint is load-bearing — a bare `UNIQUE (symbol)` would collide across accounts and hand one person another person's position.
-- `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run
+- `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run. `symbol` is `NOT NULL`, which that constraint depends on: PostgreSQL treats NULLs as distinct in a `UNIQUE`, so a nullable column there would let the same day be re-inserted forever and quietly undo the re-run guarantee.
 - `trades` — every buy and sell: owner, symbol, side, shares, price per share, total value, and when. **Append-only, enforced by the database.** A `BEFORE UPDATE OR DELETE` trigger refuses to rewrite a row, so the ledger cannot drift from what actually happened — a correction is a new row, never an edit. Each row is written inside the same transaction that moves the cash and the shares, so the log and the balances can never disagree. Sells also record the weighted-average `cost_basis` they were priced against, captured while the holding is locked, which is what makes realized gain a plain `SUM` rather than a replay of every prior buy.
 
-Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.)
+Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.) This holds for the OHLC columns too, which had no such guard until migration 007: a single NaN close would have made `MAX(close)` return NaN and turned every high on the history page into NaN, with nothing on screen to say where it came from.
 
 ## Architecture
 
@@ -400,7 +400,27 @@ from the account's creation, because the original purchases happened at
 prices and times nobody recorded — the app labels them "opening position"
 rather than present a reconstruction as a trade that was observed.
 
-Every migration is safe to re-run.
+Migration 007 brings `price_history` into line with every other table
+that holds money — `CHECK` constraints rejecting negative and `NaN` values,
+a `NOT NULL` symbol, and the same `ON DELETE CASCADE` that `price_intraday`
+already had:
+
+```bash
+psql -U postgres -d practice -f migrations/007_price_history_integrity.sql
+```
+
+It repairs any existing bad rows before adding the constraints, so it
+cannot fail halfway on data that predates it. A nonsense price becomes
+`NULL` rather than being deleted, since `NULL` is what the loaders already
+write for a gap and deleting would lose the whole trading day.
+
+Every migration is safe to re-run, and `python -m portfolio_tracker.init_db`
+runs all of them after `schema.sql`. That pairing is deliberate:
+`schema.sql` is written in `CREATE ... IF NOT EXISTS` and so never alters a
+table that already exists, while the migrations do exactly that. Running
+only one of the two leaves a database that depends on which route it
+arrived by. `tests/test_schema_parity.py` builds one database each way and
+compares them down to the constraint definitions, so the two cannot drift.
 
 ## Accounts and email
 

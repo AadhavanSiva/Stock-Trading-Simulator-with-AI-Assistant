@@ -170,6 +170,18 @@ def record_sale(user_id, symbol, price, shares_to_sell):
     proceeds = to_money(shares_to_sell * price)
 
     with cursor(commit=True) as cur:
+        # The account row is locked first, before the holding, because
+        # record_purchase locks them in that order too. Taking the same two
+        # locks in opposite orders is the textbook deadlock: a buy holding
+        # `users` and waiting for `portfolio`, against a sell holding
+        # `portfolio` and waiting for `users`, and PostgreSQL resolves it by
+        # aborting one of them. That is reachable here — one account, a buy
+        # and a sell of the same position arriving together on two of
+        # gunicorn's threads. This line is the whole fix; see
+        # tests/test_concurrency.py, which drives both orders and fails if
+        # either deadlocks.
+        cur.execute("SELECT 1 FROM users WHERE id = %s FOR UPDATE", (user_id,))
+
         cur.execute(
             """
             SELECT id, shares, purchase_price FROM portfolio

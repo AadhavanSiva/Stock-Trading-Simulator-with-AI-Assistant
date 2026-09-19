@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 DO $$ BEGIN
     ALTER TABLE users ADD CONSTRAINT users_cash_sane
         CHECK (cash >= 0 AND cash <> 'NaN');
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 -- 1. Give portfolio an owner column.
@@ -52,7 +52,7 @@ ALTER TABLE portfolio ALTER COLUMN user_id SET NOT NULL;
 DO $$ BEGIN
     ALTER TABLE portfolio ADD CONSTRAINT portfolio_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 -- 4. Swap the single-user uniqueness rule for the per-user one.
@@ -61,7 +61,7 @@ ALTER TABLE portfolio DROP CONSTRAINT IF EXISTS portfolio_symbol_key;
 DO $$ BEGIN
     ALTER TABLE portfolio ADD CONSTRAINT portfolio_user_symbol_key
         UNIQUE (user_id, symbol);
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS portfolio_user_idx ON portfolio (user_id);
