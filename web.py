@@ -227,7 +227,9 @@ def login_dev():
         flash("Enter an email address to sign in with.", "error")
         return redirect(url_for("login"))
 
-    account = users.upsert_from_google(f"dev:{email}", email, email.split("@")[0])
+    # Reuses an existing account at that address rather than minting a
+    # second one beside it; see users.dev_account.
+    account = users.dev_account(email)
     return finish_login(account[0], f"Signed in locally as {email}.")
 
 

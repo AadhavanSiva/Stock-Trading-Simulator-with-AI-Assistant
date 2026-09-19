@@ -62,15 +62,62 @@ def get_by_google_sub(google_sub):
 
 
 def get_by_email(email):
+    """The account at an address — the oldest one, if more than one shares it.
+
+    `email` is not unique and deliberately so (see list_by_email), so this
+    orders before it takes one row. Without the ORDER BY, PostgreSQL is
+    free to return either row and may return a different one from one call
+    to the next, which made `PORTFOLIO_USER` resolve to an account at
+    random. Callers that must not guess should use list_by_email instead.
+    """
     with cursor() as cur:
         cur.execute(
             """
             SELECT id, google_sub, email, display_name, cash
             FROM users WHERE lower(email) = lower(%s)
+            ORDER BY id
             """,
             (email,),
         )
         return cur.fetchone()
+
+
+def list_by_email(email):
+    """Every account at an address, oldest first.
+
+    More than one is possible. `google_sub` is the identity; the email is a
+    mutable attribute refreshed from Google on each sign-in, so two
+    accounts can legitimately end up sharing an address — most obviously
+    when a workspace address is freed and reassigned to a new person, who
+    arrives with a new `sub`. This exists so callers can tell "one account"
+    from "several" and say so, rather than silently picking.
+    """
+    with cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, google_sub, email, display_name, cash
+            FROM users WHERE lower(email) = lower(%s)
+            ORDER BY id
+            """,
+            (email,),
+        )
+        return cur.fetchall()
+
+
+def dev_account(email):
+    """Find or create the local-only account behind a dev sign-in.
+
+    An address that already has an account signs into *that* account. The
+    earlier version minted a synthetic `dev:<email>` subject unconditionally,
+    which could never match a real Google `sub`, so signing in locally with
+    an address that already had a Google account produced a second row with
+    the same email and a separate portfolio — and left `get_by_email`
+    choosing between them.
+    """
+    existing = get_by_email(email)
+    if existing is not None:
+        return existing
+    return upsert_from_google(f"dev:{email}", email, email.split("@")[0])
 
 
 def list_users():
@@ -138,6 +185,22 @@ def resolve_cli_user():
     by PORTFOLIO_USER in .env. Raises UnknownUser with a message that says
     how to fix it rather than failing obscurely.
     """
+    if config.PORTFOLIO_USER_ID:
+        try:
+            wanted = int(str(config.PORTFOLIO_USER_ID).strip())
+        except ValueError:
+            raise UnknownUser(
+                f"PORTFOLIO_USER_ID must be a number, not "
+                f"'{config.PORTFOLIO_USER_ID}'."
+            )
+        user = get_by_id(wanted)
+        if user is None:
+            raise UnknownUser(
+                f"No account with id {wanted}. Known accounts: "
+                + (_known_emails() or "none yet.")
+            )
+        return user
+
     email = config.PORTFOLIO_USER
     if not email:
         raise UnknownUser(
@@ -146,14 +209,24 @@ def resolve_cli_user():
             "Known accounts: " + (_known_emails() or "none yet — sign in via the web app first.")
         )
 
-    user = get_by_email(email)
-    if user is None:
+    matches = list_by_email(email)
+    if not matches:
         raise UnknownUser(
             f"No account found for '{email}'. Sign in to the web app with that "
             "Google account first, or correct PORTFOLIO_USER in .env.\n"
             "Known accounts: " + (_known_emails() or "none yet.")
         )
-    return user
+    if len(matches) > 1:
+        # Silently picking one would let the terminal trade against a
+        # different portfolio than the browser shows, with nothing on
+        # screen to explain the discrepancy.
+        listed = ", ".join(f"id {row[0]} ({row[1]})" for row in matches)
+        raise UnknownUser(
+            f"More than one account uses '{email}': {listed}. PORTFOLIO_USER "
+            f"cannot say which one you mean. Set PORTFOLIO_USER_ID to the id "
+            f"you want, or delete the account you no longer use."
+        )
+    return matches[0]
 
 
 def _known_emails():

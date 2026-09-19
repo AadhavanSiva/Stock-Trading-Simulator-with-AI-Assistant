@@ -296,6 +296,11 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    through the web app once first; if the setting is missing or does not
    match an account, the CLI lists the accounts it does know about.
 
+   Email addresses are not unique (see "Accounts and email" below), so if
+   two accounts share one the CLI refuses to guess and names them both.
+   Set `PORTFOLIO_USER_ID` to the account id to say which you mean; it
+   takes precedence over `PORTFOLIO_USER`.
+
    **Web:**
 
    ```bash
@@ -396,6 +401,39 @@ prices and times nobody recorded — the app labels them "opening position"
 rather than present a reconstruction as a trade that was observed.
 
 Every migration is safe to re-run.
+
+## Accounts and email
+
+`users.google_sub` is the identity; `users.email` is a mutable attribute
+refreshed from Google on every sign-in. There is deliberately **no
+`UNIQUE` constraint on `email`**, and two accounts can legitimately share
+an address — most obviously when a workspace address is freed and
+reassigned, so a new person arrives with the same address and a new `sub`.
+
+Adding the constraint was tried and rejected: with `UNIQUE (lower(email))`
+in place, that new hire's first sign-in dies on a `UniqueViolation` before
+the account is created, and so does an existing account whose Google
+address changes to one another row already holds. Both surface as a 500
+rather than as anything a person could act on. Identity belongs to `sub`,
+and constraining a value the identity provider controls converts their
+routine administration into our outage.
+
+What follows from that is that every read keyed on email has to be
+deliberate:
+
+- `get_by_email` orders by `id` before taking a row, so the answer is at
+  least stable. It used to `fetchone()` with no `ORDER BY`, which let
+  `PORTFOLIO_USER` resolve to a different account between one call and the
+  next.
+- `list_by_email` returns all of them, for callers that must not guess.
+- `resolve_cli_user` refuses an ambiguous address and names the candidates,
+  rather than silently trading against whichever row came back first.
+  `PORTFOLIO_USER_ID` names one exactly.
+- Local dev sign-in reuses an existing account at that address instead of
+  minting a second one beside it. It previously synthesised a
+  `dev:<email>` subject unconditionally, which could never match a real
+  Google `sub` — so signing in locally with an address that already had an
+  account silently forked it into two portfolios.
 
 ## Security notes
 

@@ -88,6 +88,10 @@ ALLOW_DEV_LOGIN = os.getenv("ALLOW_DEV_LOGIN", "").strip() in ("1", "true", "yes
 # Which account the terminal interface acts as. The CLI cannot run a browser
 # redirect, so it reads the account from here instead.
 PORTFOLIO_USER = os.getenv("PORTFOLIO_USER")
+# An unambiguous alternative, by account id. Email is not unique — two
+# accounts can share an address — so this is the way to name one exactly
+# when PORTFOLIO_USER would be ambiguous. Takes precedence when both are set.
+PORTFOLIO_USER_ID = os.getenv("PORTFOLIO_USER_ID")
 
 # Cash every new account starts with, in dollars.
 STARTING_CASH = os.getenv("STARTING_CASH", "50000")
