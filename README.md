@@ -344,7 +344,8 @@ the service, so Render needs no hand-entered build settings.
    the values it asks for: `DATABASE_URL` (the Neon string), `GOOGLE_CLIENT_ID`,
    `GOOGLE_CLIENT_SECRET` and `GEMINI_API_KEY`. `FLASK_SECRET_KEY` is generated
    for you. Every build runs `python -m portfolio_tracker.init_db`, which
-   creates any missing tables, so a new database needs no manual step.
+   applies `schema.sql` and then every migration, so a new database needs no
+   manual step and an existing one is brought up to date in the same pass.
 3. **Google sign-in.** Once Render shows the service URL, add
    `https://<your-service>.onrender.com/auth/callback` to the OAuth client's
    Authorized redirect URIs. While the consent screen is in Testing, only

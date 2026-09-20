@@ -6,8 +6,10 @@ services:
     name: stock-trading-simulator
     runtime: python
     plan: free
-    # schema.sql only creates what is missing, so applying it on every build
-    # is safe, and a fresh database is ready before the first request.
+    # init_db applies schema.sql and then every migration, both idempotent,
+    # so running it on each build is safe and leaves a fresh database and an
+    # upgraded one with the same shape. See README, "Upgrading an existing
+    # database".
     buildCommand: pip install -r requirements.txt && python -m portfolio_tracker.init_db
     # One process, so the 30 s quote cache is shared; threads for concurrent
     # requests. The timeout exceeds the assistant's 120 s Gemini time limit.
