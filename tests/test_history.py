@@ -114,10 +114,16 @@ class TestLoadHistory:
 
 class TestAggregates:
     def test_high_low(self, db):
+        """Dated relative to today, because the query is windowed: fixed
+        dates would pass until they aged past the window and then fail for
+        a reason that has nothing to do with high and low."""
+        from datetime import timedelta
+
+        today = datetime.now(EXCHANGE).date()
         stocks.upsert_stock("AAPL", "Apple", Decimal("200"))
         df = frame([
-            ("2026-01-02", 1.0, 2.0, 0.5, 1.5, 100),
-            ("2026-01-03", 1.0, 2.0, 0.5, 3.5, 100),
+            ((today - timedelta(days=3)).strftime("%Y-%m-%d"), 1.0, 2.0, 0.5, 1.5, 100),
+            ((today - timedelta(days=2)).strftime("%Y-%m-%d"), 1.0, 2.0, 0.5, 3.5, 100),
         ])
         with with_history(df):
             history.load_history_for_symbol("AAPL")
@@ -135,3 +141,73 @@ class TestAggregates:
             history.load_history_for_symbol("AAPL")
 
         assert history.get_recent_averages(days=30) == []
+
+
+class TestTheRecentRangeIsActuallyRecent:
+    """Regression: get_high_low spanned every stored day, so the page put a
+    pre-split $1.05 next to a $364 Tesla under a heading reading "the last
+    30 days". The same table had this bug once before, when the 1D panel
+    reported a 1980 split-adjusted $0.04 as the one-day low.
+    """
+
+    def _load(self, db, rows):
+        stocks.upsert_stock("TSLA", "Tesla, Inc.", Decimal("364"))
+        with with_history(frame(rows)):
+            history.load_history_for_symbol("TSLA")
+
+    def _days_ago(self, n):
+        from datetime import timedelta
+
+        return (datetime.now(EXCHANGE).date() - timedelta(days=n)).strftime("%Y-%m-%d")
+
+    def test_an_ancient_low_is_not_reported_as_recent(self, db):
+        self._load(db, [
+            (self._days_ago(4000), 1.0, 1.1, 1.0, 1.05, 100),   # pre-split
+            (self._days_ago(5), 360.0, 370.0, 355.0, 364.0, 100),
+            (self._days_ago(2), 360.0, 370.0, 355.0, 359.0, 100),
+        ])
+        symbol, high, low = history.get_high_low()[0]
+        assert low == Decimal("359.0"), "an all-time low leaked into the window"
+        assert high == Decimal("364.0")
+
+    def test_the_window_matches_the_average_beside_it(self, db):
+        """The two columns sit in one row and must cover the same days."""
+        rows = [(self._days_ago(n), 100.0, 100.0, 100.0, float(100 + n), 100)
+                for n in (2, 5, 10, 200)]
+        self._load(db, rows)
+
+        averages = dict(history.get_recent_averages())
+        _, high, low = history.get_high_low()[0]
+        # The 200-day-old bar is outside both, so neither sees its 300.
+        assert averages["TSLA"] < Decimal("300")
+        assert high < Decimal("300") and low < Decimal("300")
+
+    def test_both_windows_come_from_one_constant(self, db):
+        """So they cannot drift apart the way they did."""
+        rows = [(self._days_ago(n), 1.0, 1.0, 1.0, float(n), 100)
+                for n in (1, history.RECENT_DAYS + 20)]
+        self._load(db, rows)
+        assert len(history.get_recent_averages()) == len(history.get_high_low())
+
+    def test_a_wider_window_reaches_further_back(self, db):
+        self._load(db, [
+            (self._days_ago(100), 1.0, 1.1, 1.0, 5.0, 100),
+            (self._days_ago(2), 360.0, 370.0, 355.0, 364.0, 100),
+        ])
+        assert history.get_high_low(days=30)[0][2] == Decimal("364.0")
+        assert history.get_high_low(days=365)[0][2] == Decimal("5.0")
+
+    def test_a_symbol_with_nothing_recent_drops_out(self, db):
+        """Rather than reporting a stale range as current."""
+        self._load(db, [(self._days_ago(400), 1.0, 1.1, 1.0, 5.0, 100)])
+        assert history.get_high_low() == []
+
+    def test_the_page_labels_the_window(self, client, user):
+        from portfolio_tracker.models import portfolio
+
+        stocks.upsert_stock("TSLA", "Tesla, Inc.", Decimal("364"))
+        portfolio.record_purchase(user, "TSLA", "Tesla, Inc.",
+                                  Decimal("364"), Decimal("1"))
+        page = client.get("/history").data
+        assert b"30-day high" in page and b"30-day low" in page
+        assert b">Highest<" not in page and b">Lowest<" not in page

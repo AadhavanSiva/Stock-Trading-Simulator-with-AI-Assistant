@@ -9,6 +9,10 @@ from portfolio_tracker.services.market_data import get_intraday, get_price_histo
 # A trading day is the exchange's day, not UTC's.
 EXCHANGE_TZ = ZoneInfo("America/New_York")
 
+# The window the "recent prices" page reports over. One constant, so
+# the average and the high/low beside it always cover the same days.
+RECENT_DAYS = 30
+
 
 # market_data hands back Bar tuples whose prices are already Decimal or
 # None, so the NaN-sniffing these two used to do belongs to the parsing
@@ -81,7 +85,7 @@ def load_history_for_symbol(symbol, period="6mo"):
         return len(inserted)
 
 
-def get_recent_averages(days=30):
+def get_recent_averages(days=RECENT_DAYS):
     """Average closing price per symbol over the last N days."""
     with cursor() as cur:
         cur.execute(
@@ -98,17 +102,31 @@ def get_recent_averages(days=30):
         return cur.fetchall()
 
 
-def get_high_low():
-    """Highest and lowest close per symbol across all stored history."""
+def get_high_low(days=RECENT_DAYS):
+    """Highest and lowest close per symbol over the last N days.
+
+    Windowed, and to the same window as get_recent_averages. It used to
+    span every stored day, which put a pre-split $1.05 beside a $364
+    Tesla under a heading reading "the last 30 days" — a figure that
+    answers a different question from the average next to it and cannot
+    tell you whether today is high or low, which is the whole point of
+    the page.
+
+    This is the second time this table has had that bug: the 1D panel
+    once showed a 1980 split-adjusted $0.04 as the one-day low. Both
+    windows now come from one argument so they cannot drift apart again.
+    """
     with cursor() as cur:
         cur.execute(
             """
             SELECT symbol, MAX(close), MIN(close)
             FROM price_history
-            WHERE close IS NOT NULL
+            WHERE date >= CURRENT_DATE - (%s * INTERVAL '1 day')
+              AND close IS NOT NULL
             GROUP BY symbol
             ORDER BY symbol
-            """
+            """,
+            (days,),
         )
         return cur.fetchall()
 
