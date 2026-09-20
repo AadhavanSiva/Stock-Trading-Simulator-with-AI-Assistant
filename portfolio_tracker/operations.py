@@ -24,7 +24,7 @@ from portfolio_tracker.errors import (
 )
 from portfolio_tracker.models import (
     assistant_usage, history, leaderboard, portfolio, stocks, trades, users,
-    value_history,
+    value_history, watchlist,
 )
 from portfolio_tracker.models.portfolio import to_money
 from portfolio_tracker.services import market_data
@@ -48,6 +48,7 @@ __all__ = [
     "recent_activity", "trade_history", "export_account", "delete_account",
     "record_value_sample", "performance", "percent_return",
     "leaderboard_standings", "my_standing", "set_leaderboard_participation",
+    "watch", "unwatch", "watchlist_rows", "refresh_watchlist",
 ]
 
 
@@ -877,3 +878,80 @@ def my_standing(user_id):
         participants=participants,
         as_of=recorded_at,
     )
+
+
+# -------------------------------------------------------------- watchlist
+
+WatchRow = namedtuple(
+    "WatchRow",
+    "symbol company_name price previous_close todays_change todays_percent "
+    "owned added_at",
+)
+
+
+def watch(user_id, symbol):
+    """Follow a ticker.
+
+    The symbol is priced before it is stored, which both rejects a
+    typo before it reaches the list and registers the company in `stocks`
+    — the foreign key needs a row there, and a watchlist is often the
+    first place a ticker is mentioned.
+    """
+    quote = look_up(user_id, symbol)
+    stocks.upsert_stock(quote.symbol, quote.company_name, quote.price,
+                        previous_close=quote.previous_close)
+    added = watchlist.add(user_id, quote.symbol)
+    return quote.symbol, added
+
+
+def unwatch(user_id, symbol):
+    return watchlist.remove(user_id, (symbol or "").strip().upper())
+
+
+def watchlist_rows(user_id):
+    """The followed tickers, with today's move on each."""
+    rows = []
+    for symbol, name, price, previous_close, added_at, owned in watchlist.entries(user_id):
+        change = percent = None
+        if price is not None and previous_close:
+            change = price - previous_close
+            percent = change / previous_close * 100
+        rows.append(WatchRow(
+            symbol=symbol,
+            company_name=name or symbol,
+            price=price,
+            previous_close=previous_close,
+            todays_change=change,
+            todays_percent=percent,
+            owned=owned,
+            added_at=added_at,
+        ))
+    return rows
+
+
+def refresh_watchlist(user_id, on_start=None):
+    """Re-quote every followed ticker.
+
+    Separate from refresh_prices, which exists to re-value holdings and
+    takes a portfolio sample afterwards. A watched ticker is not part of
+    the account's value, so quoting one must not move the performance
+    chart.
+    """
+    outcomes = []
+    updated = failed = 0
+    for symbol in watchlist.symbols(user_id):
+        if on_start:
+            on_start(symbol)
+        try:
+            price, _, previous_close = market_data.get_quote(symbol, fresh=True)
+            if price is None:
+                outcomes.append(SymbolOutcome(symbol, False, "no price data available"))
+                failed += 1
+                continue
+            stocks.update_stock_price(symbol, price, previous_close=previous_close)
+            outcomes.append(SymbolOutcome(symbol, True, f"${price:,.2f}"))
+            updated += 1
+        except Exception as exc:
+            outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
+            failed += 1
+    return RefreshReport(outcomes, updated, failed, len(outcomes))

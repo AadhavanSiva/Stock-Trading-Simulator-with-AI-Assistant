@@ -25,6 +25,8 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - A performance chart of account value over time, and a percent return measured against the opening balance
 - Today's change per position and for the account overall, measured from the previous close
 - An opt-in leaderboard showing a chosen nickname, account value and return — never a real name, email address, holding, trade or cash balance
+- A watchlist for following tickers without owning them, with today's move on each
+- Terms, privacy policy and a persistent simulation disclaimer — drafts, clearly marked as needing legal review
 - Realized gain per position and overall, computed from that log, kept distinct from the unrealized gain on what is still held
 - "Recent activity" on the portfolio page and a full, paged trade history
 - Account deletion that actually deletes: one transaction, a typed confirmation, and no orphaned rows left behind
@@ -49,6 +51,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - `portfolio` — holdings (owner, symbol, shares, purchase price). `UNIQUE (user_id, symbol)`: one row per ticker *per account*, so a repeat buy blends into a weighted-average cost basis rather than opening a second lot. The `user_id` in that constraint is load-bearing — a bare `UNIQUE (symbol)` would collide across accounts and hand one person another person's position.
 - `price_history` — daily OHLCV data per ticker, with a composite unique constraint on `(symbol, date)` so ingestion is safe to re-run. `symbol` is `NOT NULL`, which that constraint depends on: PostgreSQL treats NULLs as distinct in a `UNIQUE`, so a nullable column there would let the same day be re-inserted forever and quietly undo the re-run guarantee.
 - `portfolio_value_history` — what each account was worth (cash, holdings value, and the total) sampled whenever prices are refreshed. This is the only record of the past: `portfolio` holds the position as it stands now, and nothing else remembers what it was worth last week, so a sample missed is a sample gone. It is also what the leaderboard ranks on — re-pricing every account's holdings per page view would mean a market-data pass per viewer.
+- `watchlist` — tickers an account follows without owning. Deliberately not a flag on `portfolio`: a holding has shares and a cost basis and a watched ticker has neither, so carrying both in one table would mean every query that reads a position learning to exclude the rows that are not one.
 - `trades` — every buy and sell: owner, symbol, side, shares, price per share, total value, and when. **Append-only, enforced by the database.** A `BEFORE UPDATE OR DELETE` trigger refuses to rewrite a row, so the ledger cannot drift from what actually happened — a correction is a new row, never an edit. Each row is written inside the same transaction that moves the cash and the shares, so the log and the balances can never disagree. Sells also record the weighted-average `cost_basis` they were priced against, captured while the holding is locked, which is what makes realized gain a plain `SUM` rather than a replay of every prior buy.
 
 Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.) This holds for the OHLC columns too, which had no such guard until migration 007: a single NaN close would have made `MAX(close)` return NaN and turned every high on the history page into NaN, with nothing on screen to say where it came from.
@@ -66,6 +69,7 @@ portfolio_tracker/
         trades.py          the append-only trade log
         value_history.py   account value sampled over time
         leaderboard.py     standings, read from those samples
+        watchlist.py       tickers followed but not owned
         users.py           accounts and cash balances
     services/
         market_data.py     the only module that talks to yfinance

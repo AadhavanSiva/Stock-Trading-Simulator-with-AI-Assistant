@@ -1,0 +1,33 @@
+{# The draft banner shared by all three policy pages.
+
+   DRAFT TEMPLATES — NOT FINISHED LEGAL DOCUMENTS.
+
+   These pages were written to describe what this application actually
+   does, which is the part a developer can supply. They have not been
+   written or reviewed by a lawyer, and they are not tailored to any
+   jurisdiction, company or deployment. Anything that turns on where you
+   or your users are — consumer protection, data protection obligations,
+   the rules about simulated trading and financial promotions, limitation
+   of liability, the governing-law clause — is exactly the part that needs
+   professional review before this is published anywhere real.
+
+   The banner below says the same thing to the reader. It is deliberately
+   not a subtle one, and it should be removed only at the point the
+   documents behind it have actually been reviewed. #}
+
+{% macro draft_notice(what) -%}
+    <div class="draft-notice" role="note">
+        <p>
+            <strong>Draft — not a finished legal document.</strong>
+            This {{ what }} is a template. It describes how this application
+            behaves, but it has not been written or reviewed by a lawyer and
+            is not tailored to any jurisdiction.
+        </p>
+        <p>
+            It is here so the project has something accurate to point at while
+            it is a personal project, and so the shape of the thing exists.
+            It needs professional review before this application is deployed
+            publicly or used by anyone other than its author.
+        </p>
+    </div>
+{%- endmacro %}

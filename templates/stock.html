@@ -251,6 +251,17 @@
             {% if quote.owned is not none %}
                 <a class="btn btn-secondary" href="{{ url_for('sell_quantity', symbol=symbol) }}">Sell {{ symbol }}</a>
             {% endif %}
+            {# Following is not a trade, so it stays a quiet control beside
+               the two that are. #}
+            <form method="post"
+                  action="{{ url_for('watchlist_remove' if watching else 'watchlist_add') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="symbol" value="{{ symbol }}">
+                <input type="hidden" name="next" value="{{ url_for('stock_detail', symbol=symbol) }}">
+                <button type="submit" class="btn btn-quiet">
+                    {{ 'Unfollow' if watching else 'Follow' }} {{ symbol }}
+                </button>
+            </form>
         </div>
     </div>
 

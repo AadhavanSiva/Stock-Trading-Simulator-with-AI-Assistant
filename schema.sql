@@ -256,3 +256,21 @@ CREATE TABLE IF NOT EXISTS portfolio_value_history (
 -- walks back through a window, and the leaderboard takes just the latest.
 CREATE INDEX IF NOT EXISTS portfolio_value_history_user_time_idx
     ON portfolio_value_history (user_id, recorded_at DESC);
+
+-- Tickers someone follows without owning.
+--
+-- Separate from `portfolio` rather than a flag on it: a holding has shares
+-- and a cost basis, a watched ticker has neither, and widening `portfolio`
+-- to carry zero-share rows would mean every query that reads a position
+-- learning to exclude them. The two answer different questions.
+CREATE TABLE IF NOT EXISTS watchlist (
+    id       SERIAL PRIMARY KEY,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol   TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- One entry per ticker per account, so "add" is idempotent and the
+    -- page cannot list the same company twice.
+    CONSTRAINT watchlist_user_symbol_key UNIQUE (user_id, symbol)
+);
+
+CREATE INDEX IF NOT EXISTS watchlist_user_idx ON watchlist (user_id);

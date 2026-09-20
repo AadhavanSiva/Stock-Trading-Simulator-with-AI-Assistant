@@ -23,7 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
-from portfolio_tracker.models import history, portfolio, stocks, users
+from portfolio_tracker.models import history, portfolio, stocks, users, watchlist
 from portfolio_tracker.services import assistant
 
 log = logging.getLogger(__name__)
@@ -521,6 +521,7 @@ def stock_detail(symbol):
         motion="calm",
         symbol=symbol,
         quote=quote,
+        watching=watchlist.contains(g.user_id, symbol),
         chart=chart,
         readouts=charts.readouts(chart),
         window=window,
@@ -858,6 +859,82 @@ def trades_view():
         log=operations.trade_history(g.user_id, page=request.args.get("page", 1)),
         realized=operations.realized_summary(g.user_id),
     )
+
+
+# ------------------------------------------------------------ policies
+
+# Reachable signed out: someone deciding whether to sign up needs to be
+# able to read these first, which is the only moment they are much use.
+
+@app.route("/terms")
+def terms():
+    return render_template("legal/terms.html", motion="calm")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("legal/privacy.html", motion="calm")
+
+
+@app.route("/disclaimer")
+def disclaimer():
+    return render_template("legal/disclaimer.html", motion="calm")
+
+
+# -------------------------------------------------------------- watchlist
+
+@app.route("/watchlist")
+@login_required
+def watchlist_view():
+    return render_template(
+        "watchlist.html",
+        motion="calm",
+        rows=operations.watchlist_rows(g.user_id),
+    )
+
+
+@app.route("/watchlist/add", methods=["POST"])
+@login_required
+def watchlist_add():
+    """Follow a ticker. Reached from the stock page and the watchlist."""
+    try:
+        symbol, added = operations.watch(g.user_id, request.form.get("symbol"))
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
+
+    flash(f"{symbol} added to your watchlist." if added
+          else f"{symbol} is already on your watchlist.", "success")
+    return redirect(safe_next(request.form.get("next"))
+                    or url_for("stock_detail", symbol=symbol))
+
+
+@app.route("/watchlist/remove", methods=["POST"])
+@login_required
+def watchlist_remove():
+    symbol = (request.form.get("symbol") or "").strip().upper()
+    if operations.unwatch(g.user_id, symbol):
+        flash(f"{symbol} removed from your watchlist.", "notice")
+    return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
+
+
+@app.route("/watchlist/refresh", methods=["POST"])
+@login_required
+def watchlist_refresh():
+    """Re-quote the watched tickers.
+
+    Separate from the holdings refresh: a watched ticker is not part of
+    the account's value, so quoting one must not move the performance
+    chart or the leaderboard standing.
+    """
+    report = operations.refresh_watchlist(g.user_id)
+    if not report.total:
+        flash("Nothing on your watchlist yet.", "notice")
+    else:
+        flash(f"Refreshed {report.updated} of {report.total}."
+              + (f" {report.failed} could not be updated." if report.failed else ""),
+              "success" if not report.failed else "notice")
+    return redirect(url_for("watchlist_view"))
 
 
 # ------------------------------------------------------------ leaderboard

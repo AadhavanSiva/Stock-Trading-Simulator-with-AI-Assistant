@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "legal/_draft.html" import draft_notice %}
+{% set active = 'legal' %}
+{% block title %}Disclaimer · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">Please read</span>
+    <h1>Disclaimer</h1>
+</div>
+
+{{ draft_notice("disclaimer") }}
+
+<div class="panel legal">
+    <h2>This is a simulation</h2>
+    <p>
+        Everything on this site is pretend. Each account is given
+        {{ starting_cash | money }} in practice money that does not exist and
+        cannot be withdrawn, deposited, transferred or exchanged for anything.
+        No real shares are bought or sold. No order ever reaches a market, a
+        broker or an exchange. Nothing you do here has any effect outside this
+        application's own database.
+    </p>
+    <p>
+        There is no way to put real money in, and there is nothing to take out.
+        A gain here is not income and a loss here is not a loss.
+    </p>
+
+    <h2>The prices are delayed</h2>
+    <p>
+        Prices come from Yahoo Finance and are <strong>delayed</strong>. They
+        are not a live market feed, they are not guaranteed to be accurate or
+        complete, and they may be stale, wrong or missing entirely — the app
+        tells you when it could not fetch one.
+    </p>
+    <p>
+        Prices are also only updated when something asks for them: opening a
+        page, making a trade, or using "Refresh prices". A figure on screen may
+        have been fetched some time ago. The performance chart and the
+        leaderboard are explicitly as of the last refresh, not as of now.
+    </p>
+    <p>
+        Because of all this, a trade in this simulator will not match what the
+        same trade would have done in a real market, and results here should
+        not be read as an indication of what a real strategy would have
+        returned.
+    </p>
+
+    <h2>This is not investment advice</h2>
+    <p>
+        Nothing here is financial, investment, tax or legal advice, and nothing
+        here is a recommendation to buy, sell or hold anything. No part of this
+        site is a solicitation or an offer to deal in any security.
+    </p>
+    <p>
+        That includes <strong>Ask</strong>, the research assistant. Ask is a
+        large language model. It can be confidently wrong, it can misread the
+        data it is given, and the search results it draws on may be inaccurate
+        or out of date. It is there to help you read the market, not to tell
+        you what to do, and its output should be checked against a primary
+        source before you rely on it for anything.
+    </p>
+
+    <h2>The leaderboard is a game</h2>
+    <p>
+        Ranking is by simulated account value and rewards whatever did well
+        over a short period, which in a real market usually means taking risks
+        that are a bad idea with money that matters. It is not a measure of
+        skill and it is not a model to copy.
+    </p>
+
+    <h2>No warranty</h2>
+    <p>
+        This is a personal learning project, provided as-is, with no guarantee
+        that it works correctly, stays available, or keeps your data. It may
+        lose data, it may be taken offline without notice, and it may contain
+        bugs that make the figures it displays wrong.
+    </p>
+</div>
+{% endblock %}

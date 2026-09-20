@@ -1211,3 +1211,36 @@ tr.is-you > td:first-child { box-shadow: inset 3px 0 0 var(--color-brand); }
 
 .checkline { display: flex; align-items: center; gap: var(--s2); font-weight: 400; }
 .checkline input { width: auto; min-height: 0; }
+
+/* --------------------------------------------------------- watchlist --- */
+
+.inline-form { display: flex; align-items: flex-end; gap: var(--s3); flex-wrap: wrap; }
+.inline-form .field { max-width: 12rem; }
+.row-actions { display: inline-flex; align-items: center; gap: var(--s2); justify-content: flex-end; }
+@media (max-width: 720px) { .row-actions { justify-content: flex-start; } }
+
+/* ---------------------------------------------------------- policies --- */
+
+.footer-disclaimer { max-width: 62ch; margin: 0 auto var(--s3); }
+.footer-links { display: flex; gap: var(--s4); justify-content: center; flex-wrap: wrap; }
+.footer-links a { font-size: .875rem; }
+
+/* A draft banner that cannot be mistaken for chrome. */
+.draft-notice {
+    border: 1px solid var(--color-research);
+    background: var(--color-research-wash);
+    color: var(--color-research-strong);
+    border-radius: var(--radius-panel);
+    padding: var(--s4) var(--s5);
+    margin-bottom: var(--s5);
+}
+.draft-notice p { margin: 0 0 var(--s2); }
+.draft-notice p:last-child { margin-bottom: 0; }
+
+.legal { max-width: 68ch; }
+.legal h2 { margin-top: var(--s6); }
+.legal h3 { margin-top: var(--s5); }
+.legal ul { padding-left: var(--s5); }
+.legal li { margin-bottom: var(--s2); }
+.legal .updated { color: var(--color-text-3); font-size: .875rem; }
+.gate-terms { margin: var(--s4) 0 0; font-size: .8125rem; line-height: 1.5; }

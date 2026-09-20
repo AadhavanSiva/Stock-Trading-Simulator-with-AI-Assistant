@@ -41,6 +41,7 @@
                 <a href="{{ url_for('buy_start') }}"    {% if active == 'buy' %}class="is-active" aria-current="page"{% endif %}>Buy</a>
                 <a href="{{ url_for('sell_start') }}"   {% if active == 'sell' %}class="is-active" aria-current="page"{% endif %}>Sell</a>
                 <a href="{{ url_for('trades_view') }}"  {% if active == 'trades' %}class="is-active" aria-current="page"{% endif %}>Activity</a>
+                <a href="{{ url_for('watchlist_view') }}" {% if active == 'watchlist' %}class="is-active" aria-current="page"{% endif %}>Watchlist</a>
                 <a href="{{ url_for('leaderboard_view') }}" {% if active == 'leaderboard' %}class="is-active" aria-current="page"{% endif %}>Leaderboard</a>
                 <a href="{{ url_for('history_view') }}" {% if active == 'history' %}class="is-active" aria-current="page"{% endif %}>History</a>
                 <a href="{{ url_for('actions') }}"      {% if active == 'actions' %}class="is-active" aria-current="page"{% endif %}>Update</a>
@@ -190,7 +191,19 @@
 {% endif %}
 
 <footer class="footer">
-    <p>A practice portfolio with pretend money · prices from Yahoo Finance · nothing here is financial advice</p>
+    {# The disclaimer is persistent and sits above the links, not folded
+       into them: someone has to be able to learn this without clicking
+       anything, on whatever page they landed on. #}
+    <p class="footer-disclaimer">
+        <strong>A simulation.</strong> No real money is involved and nothing can
+        be bought or sold here. Prices come from Yahoo Finance and are delayed.
+        Nothing on this site is investment advice.
+    </p>
+    <nav class="footer-links" aria-label="Policies">
+        <a href="{{ url_for('terms') }}">Terms of Service</a>
+        <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+        <a href="{{ url_for('disclaimer') }}">Disclaimer</a>
+    </nav>
 </footer>
 
 {% block scripts %}{% endblock %}
