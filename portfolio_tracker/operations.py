@@ -305,12 +305,12 @@ def account_summary(user_id):
             # bought this morning has no close to compare against, and its
             # change stays None rather than becoming a zero that reads as
             # "unchanged today".
-            if previous_close is not None:
+            # Truthiness, not "is not None": zero is not a usable basis,
+            # and the schema now refuses one, so this agrees with it rather
+            # than dividing by it if an old row survives somewhere.
+            if previous_close:
                 row["todays_change"] = (current - previous_close) * held
-                row["todays_percent"] = (
-                    (current - previous_close) / previous_close * 100
-                    if previous_close else None
-                )
+                row["todays_percent"] = (current - previous_close) / previous_close * 100
                 todays_change += row["todays_change"]
                 todays_basis += previous_close * held
         rows.append(row)
@@ -768,8 +768,13 @@ def performance(user_id, days=None, width=720, height=220):
     if len(rows) < 2:
         return None
 
+    # The timestamps go in as datetimes, not as formatted strings.
+    # charts.build labels its own axis — date_label() shortens a real date
+    # to fit a tick and falls back to str() for anything else, so handing
+    # it pre-formatted text produced five "Thu Sep 10, 10:11pm ET" labels
+    # across the bottom of the chart instead of "Sep 10".
     chart = charts.build(
-        [(charts.point_label(recorded_at), total) for recorded_at, _, _, total in rows],
+        [(recorded_at, total) for recorded_at, _, _, total in rows],
         width=width, height=height,
     )
     if chart is None:

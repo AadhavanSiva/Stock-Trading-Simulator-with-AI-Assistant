@@ -330,3 +330,78 @@ class TestDeletion:
         operations.delete_account(seeded, "DELETE")
         join(other_user, "Racer")       # must not raise
         assert users.get_leaderboard_settings(other_user)[1] == "Racer"
+
+
+class TestNameUniquenessIsEnforcedNotJustChecked:
+    """The application checks for a clash so the message reads well; the
+    index is what settles two people claiming one name at the same moment.
+    """
+
+    def test_the_index_exists(self, db):
+        with cursor() as cur:
+            cur.execute(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE tablename = 'users' AND indexname = 'users_leaderboard_name_key'"
+            )
+            row = cur.fetchone()
+        assert row is not None, "no unique index on leaderboard_name"
+        assert "lower(btrim(leaderboard_name))" in row[0]
+        assert "WHERE (leaderboard_name IS NOT NULL)" in row[0]
+
+    def test_the_database_refuses_a_duplicate_behind_the_check(self, seeded, other_user):
+        """Written straight past validate_leaderboard_name, the way a race
+        arrives."""
+        users.set_leaderboard_settings(seeded, True, leaderboard_name="Racer")
+        with pytest.raises(operations.ValidationError, match="already using"):
+            users.set_leaderboard_settings(other_user, True, leaderboard_name="Racer")
+
+    def test_it_ignores_case_and_surrounding_space(self, seeded, other_user):
+        users.set_leaderboard_settings(seeded, True, leaderboard_name="Racer")
+        with pytest.raises(operations.ValidationError):
+            users.set_leaderboard_settings(other_user, True, leaderboard_name="  rAcEr ")
+
+    def test_the_refusal_reads_the_same_either_way(self, seeded, other_user):
+        """Which of the two paths refused it is not the reader's problem."""
+        join(seeded, "Racer")
+        from_check = from_index = None
+        try:
+            operations.set_leaderboard_participation(other_user, True, name="Racer")
+        except operations.ValidationError as exc:
+            from_check = str(exc)
+        try:
+            users.set_leaderboard_settings(other_user, True, leaderboard_name="Racer")
+        except operations.ValidationError as exc:
+            from_index = str(exc)
+        assert from_check == from_index
+
+    def test_many_accounts_may_have_chosen_no_name(self, seeded, other_user):
+        """NULL means "has not chosen one", so the index has to be partial."""
+        assert users.get_leaderboard_settings(seeded)[1] is None
+        assert users.get_leaderboard_settings(other_user)[1] is None
+
+    def test_concurrent_joins_cannot_both_take_a_name(self, seeded, other_user):
+        """Two threads, one name."""
+        import threading
+
+        results = []
+
+        def claim(user_id):
+            try:
+                users.set_leaderboard_settings(user_id, True, leaderboard_name="Contested")
+                results.append("ok")
+            except Exception as exc:
+                results.append(type(exc).__name__)
+
+        threads = [threading.Thread(target=claim, args=(uid,))
+                   for uid in (seeded, other_user)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(20)
+            assert not t.is_alive()
+
+        assert results.count("ok") == 1, results
+        with cursor() as cur:
+            cur.execute("SELECT count(*) FROM users "
+                        "WHERE lower(btrim(leaderboard_name)) = 'contested'")
+            assert cur.fetchone()[0] == 1

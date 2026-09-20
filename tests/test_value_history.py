@@ -1,4 +1,5 @@
 """What an account was worth, over time — and the return computed from it."""
+import re
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -236,3 +237,26 @@ class TestTheExport:
         stocks.update_stock_price("AAPL", Decimal("150"))
         data = operations.export_account(seeded)
         assert Decimal(data["totals"]["percent_return"]) == 10
+
+
+class TestTheChartAxis:
+    """charts.build formats its own axis labels from real dates.
+
+    Passing it pre-formatted strings is silently accepted — date_label
+    falls back to str() rather than raising, so a bad label costs an axis
+    caption and never the whole chart — which is exactly why this needs a
+    test rather than an exception to notice it.
+    """
+
+    def test_ticks_are_short_dates_not_full_timestamps(self, seeded):
+        for days in range(9, -1, -1):
+            sample_at(seeded, days, Decimal(50000 + days * 100))
+        for tick in operations.performance(seeded).chart.x_ticks:
+            assert "ET" not in tick["label"], tick["label"]
+            assert len(tick["label"]) <= 12, tick["label"]
+
+    def test_the_axis_is_labelled_by_day(self, seeded):
+        sample_at(seeded, 2, Decimal("50000"))
+        sample_at(seeded, 1, Decimal("52000"))
+        labels = [tick["label"] for tick in operations.performance(seeded).chart.x_ticks]
+        assert all(re.fullmatch(r"[A-Z][a-z]{2} \d{1,2}", label) for label in labels), labels

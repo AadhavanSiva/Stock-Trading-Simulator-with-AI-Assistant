@@ -36,6 +36,21 @@ CREATE TABLE IF NOT EXISTS users (
         CHECK (NOT leaderboard_opt_in OR leaderboard_name IS NOT NULL)
 );
 
+-- One account per leaderboard name.
+--
+-- The application also checks this before saving, so it can say "someone
+-- is already using that name" rather than surface a constraint error — but
+-- a check followed by an update is two statements, and two people claiming
+-- the same name at once would both pass it. This is what actually settles
+-- it; the friendly message is a courtesy on top.
+--
+-- Partial, because NULL means "has not chosen one" and any number of
+-- accounts may be in that state. Case- and space-insensitive, so "Racer"
+-- and " racer " cannot both be taken.
+CREATE UNIQUE INDEX IF NOT EXISTS users_leaderboard_name_key
+    ON users (lower(btrim(leaderboard_name)))
+    WHERE leaderboard_name IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS stocks (
     symbol        TEXT PRIMARY KEY,
     company_name  TEXT,
@@ -47,9 +62,15 @@ CREATE TABLE IF NOT EXISTS stocks (
     -- is stored beside it, because the two have to describe the same
     -- moment: taking the close from a later lookup than the price would
     -- report a change across a window nobody asked about.
+    -- Strictly positive, unlike current_price, which is only ever
+    -- displayed. This one is divided by (today's percentage) and summed
+    -- into a basis, so a zero is not a usable value — NULL is how "not
+    -- known" is spelled, and a zero slipping through would contribute a
+    -- whole position's market value to the account's change for the day
+    -- while contributing nothing to the basis it is measured against.
     previous_close NUMERIC
         CONSTRAINT stocks_previous_close_sane
-        CHECK (previous_close IS NULL OR (previous_close >= 0 AND previous_close <> 'NaN')),
+        CHECK (previous_close IS NULL OR (previous_close > 0 AND previous_close <> 'NaN')),
     -- When every available day was last downloaded. NULL means only a
     -- partial window is stored, so an "all time" chart must say so rather
     -- than present six months as the whole history.
