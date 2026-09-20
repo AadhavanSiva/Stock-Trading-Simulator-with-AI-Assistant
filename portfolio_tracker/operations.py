@@ -768,8 +768,13 @@ def performance(user_id, days=None, width=720, height=220):
     if len(rows) < 2:
         return None
 
+    # The timestamps go in as datetimes, not as formatted strings.
+    # charts.build labels its own axis — date_label() shortens a real date
+    # to fit a tick and falls back to str() for anything else, so handing
+    # it pre-formatted text produced five "Thu Sep 10, 10:11pm ET" labels
+    # across the bottom of the chart instead of "Sep 10".
     chart = charts.build(
-        [(charts.point_label(recorded_at), total) for recorded_at, _, _, total in rows],
+        [(recorded_at, total) for recorded_at, _, _, total in rows],
         width=width, height=height,
     )
     if chart is None:
