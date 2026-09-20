@@ -6,7 +6,9 @@ instead of failing, so the pure-logic tests still run anywhere. Set
 REQUIRE_DB=1 (CI does) to make an unreachable database a failure instead,
 so a broken service container cannot pass as a green run of skips.
 """
+import json
 import os
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -43,6 +45,17 @@ def isolated_auth_config(monkeypatch):
     in CI, or the other way round. Every test starts from "no Google, no
     dev login"; the ones that need credentials patch them in themselves.
     """
+    # Market data credentials are pinned for the same reason as the sign-in
+    # ones below: once real Alpaca keys exist on a machine, a test that
+    # forgot to stub the transport would reach the live API from there and
+    # not from CI. These are obvious fakes, and the session guard means no
+    # request is made with them anyway.
+    monkeypatch.setattr(config, "ALPACA_API_KEY_ID", "test-key-id-not-a-secret")
+    monkeypatch.setattr(config, "ALPACA_API_SECRET_KEY", "test-secret-not-a-secret")
+    monkeypatch.setattr(config, "ALPACA_DATA_FEED", "iex")
+    monkeypatch.setattr(config, "ALPACA_DATA_URL", "https://data.alpaca.test")
+    monkeypatch.setattr(config, "ALPACA_TRADING_URL", "https://api.alpaca.test")
+
     monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", None)
     monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", None)
     monkeypatch.setattr(config, "ALLOW_DEV_LOGIN", False)
@@ -87,29 +100,37 @@ def no_real_api_calls(monkeypatch):
 
 
 class RealMarketDataCall(BaseException):
-    """Raised when a test reaches yfinance itself.
+    """Raised when a test reaches the market data provider itself.
 
     A BaseException on purpose: market_data turns any ordinary exception
-    from yfinance into "Yahoo Finance didn't respond", which would let an
+    into "the market data service didn't respond", which would let an
     unmocked test pass quietly. This one is not caught there, so the test
     fails loudly instead, and the suite stays offline in CI.
     """
 
 
-class _NoRealMarketData:
-    def __init__(self, symbol, *args, **kwargs):
-        raise RealMarketDataCall(
-            f"A test tried to call Yahoo Finance for {symbol!r}. Patch "
-            "market_data.get_quote / get_live_price / get_price_history, "
-            "or market_data.yf.Ticker."
-        )
+def _no_real_market_data(*args, **kwargs):
+    target = args[0] if args else kwargs.get("url", "the provider")
+    raise RealMarketDataCall(
+        f"A test tried to reach {target}. Patch market_data.get_quote / "
+        "get_live_price / get_price_history / get_intraday / "
+        "resolve_symbol, or market_data._session.get for a response-level "
+        "double."
+    )
 
 
 @pytest.fixture(autouse=True)
 def no_real_market_data(monkeypatch):
+    """Close the network at the one place every request passes through.
+
+    Patched on the session rather than on the named endpoints, so a call
+    added later is covered without anyone remembering to extend this —
+    every outbound request in market_data goes through _request, and every
+    _request goes through this.
+    """
     from portfolio_tracker.services import market_data
 
-    monkeypatch.setattr(market_data.yf, "Ticker", _NoRealMarketData)
+    monkeypatch.setattr(market_data._session, "get", _no_real_market_data)
 
 
 @pytest.fixture(autouse=True)
@@ -246,3 +267,98 @@ def rows(table="portfolio"):
     with cursor() as cur:
         cur.execute(f"SELECT * FROM {table} ORDER BY 1")
         return cur.fetchall()
+
+
+# ---------------------------------------------------------- market data doubles
+# Alpaca answers JSON over HTTP, so a double is a canned response rather
+# than a fabricated DataFrame. These live here because six test modules
+# need the same two shapes.
+
+class FakeResponse:
+    """Enough of requests.Response for market_data._request."""
+
+    def __init__(self, status_code=200, payload=None, text=None, headers=None):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text if text is not None else json.dumps(payload or {})
+        self.headers = headers or {}
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no JSON body")
+        return self._payload
+
+
+def asset_payload(symbol="AAPL", name="Apple Inc.", tradable=True,
+                  status="active", asset_class="us_equity"):
+    """One row of Alpaca's asset catalogue."""
+    return {"symbol": symbol, "name": name, "tradable": tradable,
+            "status": status, "class": asset_class, "exchange": "NASDAQ"}
+
+
+def snapshot_payload(price="100", previous_close="90", symbol="AAPL"):
+    """An Alpaca snapshot, in the shape the real endpoint returns."""
+    payload = {"symbol": symbol}
+    if price is not None:
+        payload["latestTrade"] = {"p": float(price), "t": "2026-09-18T19:59:00Z"}
+    if previous_close is not None:
+        payload["prevDailyBar"] = {"c": float(previous_close),
+                                   "t": "2026-09-17T04:00:00Z"}
+    return payload
+
+
+def bars_payload(symbol="AAPL", closes=(100.0,), start="2026-09-15T04:00:00Z",
+                 next_page_token=None):
+    """A bars response. `closes=None` produces the null Alpaca really sends."""
+    if closes is None:
+        return {"bars": None, "symbol": symbol, "next_page_token": None}
+    begin = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    return {
+        "bars": {symbol: [
+            {"t": (begin + timedelta(days=i)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+             "o": c, "h": c, "l": c, "c": c, "v": 1000 + i, "n": 10, "vw": c}
+            for i, c in enumerate(closes)
+        ]},
+        "next_page_token": next_page_token,
+    }
+
+
+def bars(closes, start=None, minutes=None, symbol="AAPL"):
+    """market_data.Bar objects, for doubling get_price_history/get_intraday.
+
+    `minutes` spaces the bars by minutes rather than days, for intraday.
+    """
+    from portfolio_tracker.services.market_data import Bar
+
+    begin = start or (datetime.now(timezone.utc) - timedelta(days=len(closes)))
+    step = timedelta(minutes=minutes) if minutes else timedelta(days=1)
+    made = []
+    for i, close in enumerate(closes):
+        value = Decimal(str(close))
+        made.append(Bar(ts=begin + step * i, open=value, high=value,
+                        low=value, close=value, volume=1000 + i))
+    return made
+
+
+def route_alpaca(asset=None, snapshot=None, bars_response=None, status=200):
+    """Patch the HTTP session, routing by URL to canned responses.
+
+    Patching the transport rather than the named functions is what lets a
+    test exercise the parsing and the error handling that sit between
+    them — which is where the interesting behaviour now lives.
+    """
+    from unittest.mock import patch
+
+    from portfolio_tracker.services import market_data
+
+    def get(url, **kwargs):
+        if "/v2/assets/" in url:
+            if asset is None:
+                return FakeResponse(404, text="asset not found")
+            return FakeResponse(status, asset)
+        if "/snapshot" in url:
+            return FakeResponse(status, snapshot if snapshot is not None else {})
+        return FakeResponse(status, bars_response
+                            if bars_response is not None else {"bars": None})
+
+    return patch.object(market_data._session, "get", side_effect=get)

@@ -26,7 +26,7 @@ class UnknownUser(ValidationError):
 
 
 class MarketDataUnavailable(Exception):
-    """Yahoo Finance could not be reached, timed out, or failed.
+    """The market data provider could not be reached, timed out, or failed.
 
     The message is written for a person and never includes the underlying
     library or network error, which is logged where it happens instead.
@@ -35,6 +35,31 @@ class MarketDataUnavailable(Exception):
     def __init__(self, symbol):
         self.symbol = symbol
         super().__init__(
-            f"Could not look up {symbol} right now. Yahoo Finance didn't "
-            f"respond, so try again in a minute."
+            f"Could not look up {symbol} right now. The market data service "
+            f"didn't respond, so try again in a minute."
+        )
+
+
+class MarketDataCredentialsRejected(MarketDataUnavailable):
+    """The provider refused our API credentials, or the data plan.
+
+    A subclass, so every existing caller still catches it and a reader
+    still sees "try again in a minute" — retrying is the only thing they
+    can usefully do. It is separate so the *logs* can say plainly that
+    this one will not fix itself, because it is a misconfiguration rather
+    than an outage.
+    """
+
+
+class UnknownSymbol(ValidationError):
+    """The provider has no such ticker.
+
+    A ValidationError, because it is a thing the person can correct by
+    typing a different symbol — unlike an outage, which they cannot.
+    """
+
+    def __init__(self, symbol):
+        self.symbol = symbol
+        super().__init__(
+            f"No market data found for '{symbol}'. Check the ticker and try again."
         )

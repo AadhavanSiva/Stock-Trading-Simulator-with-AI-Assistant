@@ -571,8 +571,8 @@ def stock_fetch(symbol):
             noun = "days"
     except MarketDataUnavailable:
         # Already logged by market_data, with the real error.
-        flash(f"Could not fetch prices for {symbol}. Yahoo Finance didn't respond, "
-              "so try again in a minute.", "error")
+        flash(f"Could not fetch prices for {symbol}. The market data service "
+              "didn't respond, so try again in a minute.", "error")
         return redirect(url_for("stock_detail", symbol=symbol, range=window))
     except Exception:
         log.exception("Fetching %s prices for %s failed", window, symbol)

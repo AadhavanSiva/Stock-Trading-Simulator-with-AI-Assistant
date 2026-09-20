@@ -1,15 +1,27 @@
 """Chart axes, and whether a long range admits when history is incomplete."""
 from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 
 from portfolio_tracker import charts
 from portfolio_tracker.db import cursor
 from portfolio_tracker.models import history, stocks
 from portfolio_tracker.services import market_data
+from portfolio_tracker.services.market_data import Bar
+
+
+EXCHANGE = ZoneInfo("America/New_York")
+
+
+def _bar(moment, close):
+    """One bar at an exact moment, in whatever zone `moment` carries."""
+    value = Decimal(str(close))
+    return Bar(ts=moment.astimezone(timezone.utc), open=value, high=value,
+               low=value, close=value, volume=1)
 
 
 def text(response):
@@ -167,9 +179,10 @@ class TestAxesOnThePage:
 
     def test_intraday_axis_says_it_is_eastern_time(self, client):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
-        start = pd.Timestamp.now(tz="America/New_York").normalize() - pd.Timedelta(days=1)
-        bars = pd.DataFrame({"Close": [1.0, 2.0, 3.0]},
-                            index=[start + pd.Timedelta(hours=h) for h in (10, 11, 12)])
+        start = datetime.now(EXCHANGE).replace(
+            hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        bars = [_bar(start + timedelta(hours=h), close)
+                for h, close in ((10, 1.0), (11, 2.0), (12, 3.0))]
         with patch.object(history, "get_intraday", return_value=bars):
             history.load_intraday_for_symbol("AAPL")
         with quote():
@@ -225,11 +238,10 @@ class TestAllTimeIsHonest:
     def test_fetching_from_all_loads_everything_and_marks_it(self, client):
         self.six_months()
         n = 400
-        frame = pd.DataFrame(
-            {"Open": [1.0] * n, "High": [1.0] * n, "Low": [1.0] * n,
-             "Close": [1.0] * n, "Volume": [1] * n},
-            index=pd.date_range(end=date.today() - timedelta(days=200), periods=n, freq="D"),
-        )
+        finish = datetime.now(EXCHANGE).replace(
+            hour=9, minute=30, second=0, microsecond=0) - timedelta(days=200)
+        frame = [_bar(finish - timedelta(days=offset), 1.0)
+                 for offset in reversed(range(n))]
         with quote(), patch.object(history, "get_price_history", return_value=frame) as fetch:
             client.post("/stock/AAPL/fetch", data={"range": "all"})
             body = text(client.get("/stock/AAPL?range=all"))

@@ -60,11 +60,52 @@ def flask_secret_key(debug):
 
 
 # --- Market data ------------------------------------------------------------
-# Upper bounds, in seconds, on a single Yahoo Finance request. A quote backs a
-# page load, so it gives up sooner; a full price history can be large.
+# Alpaca. Create a (free, paper) account at alpaca.markets, then
+# Home > API Keys > Generate. Both values are shown once; the secret
+# cannot be retrieved later, only regenerated.
+ALPACA_API_KEY_ID = os.getenv("ALPACA_API_KEY_ID", "").strip() or None
+ALPACA_API_SECRET_KEY = os.getenv("ALPACA_API_SECRET_KEY", "").strip() or None
+
+# Prices and the asset catalogue live on different hosts. The catalogue is
+# part of the trading API, and the paper host serves it with paper keys.
+ALPACA_DATA_URL = os.getenv(
+    "ALPACA_DATA_URL", "https://data.alpaca.markets").rstrip("/")
+ALPACA_TRADING_URL = os.getenv(
+    "ALPACA_TRADING_URL", "https://paper-api.alpaca.markets").rstrip("/")
+
+# Which feed to price from. The free plan serves IEX; "sip" is the
+# consolidated tape across every US exchange and needs a paid plan, which
+# Alpaca refuses with a 403 rather than quietly downgrading.
+ALPACA_DATA_FEED = os.getenv("ALPACA_DATA_FEED", "iex").strip().lower()
+
+
+def alpaca_credentials():
+    """The API key pair, or a message saying how to get one.
+
+    Raised rather than returned empty so a missing key fails at the call
+    that needs it, with instructions, instead of arriving as a puzzling
+    401 from the other side.
+    """
+    if ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY:
+        return ALPACA_API_KEY_ID, ALPACA_API_SECRET_KEY
+    raise ConfigurationError(
+        "Alpaca API keys are not set. Create a free account at "
+        "alpaca.markets, then Home > API Keys > Generate, and add\n"
+        "    ALPACA_API_KEY_ID=<your key id>\n"
+        "    ALPACA_API_SECRET_KEY=<your secret key>\n"
+        "to .env (or the server's environment)."
+    )
+
+
+def alpaca_configured():
+    return bool(ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY)
+
+
+# Upper bounds, in seconds, on a single market data request. A quote backs
+# a page load, so it gives up sooner; a full price history can be large.
 MARKET_QUOTE_TIMEOUT = float(os.getenv("MARKET_QUOTE_TIMEOUT", "8"))
 MARKET_HISTORY_TIMEOUT = float(os.getenv("MARKET_HISTORY_TIMEOUT", "20"))
-# How long a looked-up quote is reused for page views before asking Yahoo
+# How long a looked-up quote is reused for page views before asking Alpaca
 # again. Buying, selling and "Refresh prices" always fetch a fresh price.
 QUOTE_CACHE_SECONDS = float(os.getenv("QUOTE_CACHE_SECONDS", "30"))
 

@@ -9,7 +9,7 @@ from portfolio_tracker import operations
 from portfolio_tracker.models import portfolio, stocks
 from portfolio_tracker.services import market_data
 
-SECRET = "HTTPSConnectionPool(host='query2.finance.yahoo.com'): internal-detail-42"
+SECRET = "HTTPSConnectionPool(host='data.alpaca.markets'): internal-detail-42"
 
 
 def text(response):
@@ -23,22 +23,15 @@ def production_errors(monkeypatch):
     monkeypatch.setitem(web_module.app.config, "PROPAGATE_EXCEPTIONS", False)
 
 
-class FailingTicker:
-    """yfinance failing the way it does in an outage."""
+def provider_down():
+    """The market data provider failing the way a real outage does.
 
-    def __init__(self, *args, **kwargs):
-        pass
-
-    @property
-    def info(self):
-        raise RuntimeError(SECRET)
-
-    def history(self, **kwargs):
-        raise RuntimeError(SECRET)
-
-
-def yahoo_down():
-    return patch.object(market_data.yf, "Ticker", FailingTicker)
+    Raised from the transport, below every bit of parsing, so the test
+    exercises the same path a DNS failure or a dropped connection takes —
+    and proves the underlying text is not carried up to the page.
+    """
+    return patch.object(market_data._session, "get",
+                        side_effect=RuntimeError(SECRET))
 
 
 def assert_hidden(body):
@@ -82,9 +75,9 @@ class TestUnhandledErrors:
         assert "That page does not exist." in text(response)
 
 
-class TestYahooErrorTextNeverReachesAPerson:
+class TestProviderErrorTextNeverReachesAPerson:
     def test_ticker_lookup(self, client, caplog):
-        with yahoo_down():
+        with provider_down():
             response = client.get("/api/quote?symbol=AAPL")
         data = response.get_json()
         assert response.status_code == 400
@@ -93,13 +86,13 @@ class TestYahooErrorTextNeverReachesAPerson:
         assert SECRET in caplog.text
 
     def test_buy_flow(self, client):
-        with yahoo_down():
+        with provider_down():
             body = text(client.post("/buy/lookup", data={"symbol": "AAPL"}))
         assert "Could not look up AAPL right now." in body
         assert_hidden(body)
 
     def test_stock_page(self, client):
-        with yahoo_down():
+        with provider_down():
             body = text(client.get("/stock/AAPL", follow_redirects=True))
         assert "Could not look up AAPL right now." in body
         assert_hidden(body)
@@ -107,7 +100,7 @@ class TestYahooErrorTextNeverReachesAPerson:
     def test_sale(self, client, user):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         portfolio.record_purchase(user, "AAPL", "Apple Inc.", Decimal("100"), Decimal("2"))
-        with yahoo_down():
+        with provider_down():
             body = text(client.post("/sell/AAPL/confirm", data={"shares": "1"}, follow_redirects=True))
         assert "Could not look up AAPL right now." in body
         assert_hidden(body)
@@ -116,15 +109,15 @@ class TestYahooErrorTextNeverReachesAPerson:
     def test_price_refresh_report(self, client, user):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         portfolio.record_purchase(user, "AAPL", "Apple Inc.", Decimal("100"), Decimal("2"))
-        with yahoo_down():
+        with provider_down():
             body = text(client.post("/actions/refresh-prices"))
-        assert "Yahoo Finance didn&#39;t respond" in body or "Yahoo Finance didn't respond" in body
+        assert "the market data service didn&#39;t respond" in body
         assert_hidden(body)
 
     def test_history_load_report(self, client, user):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         portfolio.record_purchase(user, "AAPL", "Apple Inc.", Decimal("100"), Decimal("2"))
-        with yahoo_down():
+        with provider_down():
             body = text(client.post("/actions/load-history"))
         assert_hidden(body)
         # Regression: an outage used to read as "stored 0 new days" and nothing else.
@@ -134,9 +127,9 @@ class TestYahooErrorTextNeverReachesAPerson:
     def test_chart_fetch(self, client):
         stocks.upsert_stock("AAPL", "Apple Inc.", Decimal("100"))
         with patch.object(market_data, "get_quote",
-                          return_value=(Decimal("100"), "Apple Inc.", None)), yahoo_down():
+                          return_value=(Decimal("100"), "Apple Inc.", None)), provider_down():
             body = text(client.post("/stock/AAPL/fetch", data={"range": "1y"}, follow_redirects=True))
-        assert "Could not fetch prices for AAPL. Yahoo Finance didn" in body
+        assert "Could not fetch prices for AAPL. The market data service" in body
         assert "Fetched 0" not in body
         assert_hidden(body)
 

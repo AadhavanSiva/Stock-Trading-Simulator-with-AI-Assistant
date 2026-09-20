@@ -1,24 +1,31 @@
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
-import pandas as pd
 from psycopg2.extras import execute_values
 
 from portfolio_tracker.db import cursor
 from portfolio_tracker.services.market_data import get_intraday, get_price_history
 
+# A trading day is the exchange's day, not UTC's.
+EXCHANGE_TZ = ZoneInfo("America/New_York")
+
+
+# market_data hands back Bar tuples whose prices are already Decimal or
+# None, so the NaN-sniffing these two used to do belongs to the parsing
+# layer now and not here. They stay as the one place that decides what an
+# absent figure means, and to keep the call sites reading the same.
 
 def _price(value):
-    """OHLC cell -> Decimal, or None when the API left a gap (NaN)."""
-    if value is None or pd.isna(value):
+    """A bar's OHLC figure, or None where the feed had a gap."""
+    if value is None:
         return None
-    return Decimal(str(value))
+    value = Decimal(value)
+    return value if value.is_finite() else None
 
 
 def _volume(value):
-    """Volume -> int, or None. int(NaN) raises ValueError, so check first."""
-    if value is None or pd.isna(value):
-        return None
-    return int(value)
+    """A bar's volume as an int, or None where it is absent."""
+    return None if value is None else int(value)
 
 
 def load_history_for_symbol(symbol, period="6mo"):
@@ -27,21 +34,27 @@ def load_history_for_symbol(symbol, period="6mo"):
     Returns the number of rows newly inserted. Existing (symbol, date)
     rows are skipped, so this is safe to re-run.
     """
-    hist = get_price_history(symbol, period=period)
-    if hist is None or hist.empty:
+    bars = get_price_history(symbol, period=period)
+    if not bars:
         return 0
 
     records = [
         (
             symbol,
-            date.date(),
-            _price(row["Open"]),
-            _price(row["High"]),
-            _price(row["Low"]),
-            _price(row["Close"]),
-            _volume(row["Volume"]),
+            # A daily bar is stamped at the session's open in UTC. The
+            # date wanted is the trading day it belongs to, which is the
+            # exchange's, so the instant is converted before the date is
+            # taken — otherwise a bar opening at 13:30 UTC on one day and
+            # one at 00:30 UTC could land on different calendar dates than
+            # the sessions they describe.
+            bar.ts.astimezone(EXCHANGE_TZ).date(),
+            _price(bar.open),
+            _price(bar.high),
+            _price(bar.low),
+            _price(bar.close),
+            _volume(bar.volume),
         )
-        for date, row in hist.iterrows()
+        for bar in bars
     ]
 
     # A day with no close is a gap in the feed, not a data point.
@@ -164,18 +177,19 @@ def load_intraday_for_symbol(symbol, period="1d", interval="5m"):
     Re-running is cheap and safe: existing (symbol, ts) rows are skipped,
     so this tops up the cache rather than duplicating it.
     """
-    frame = get_intraday(symbol, period=period, interval=interval)
-    if frame is None or frame.empty:
+    bars = get_intraday(symbol, period=period, interval=interval)
+    if not bars:
         return 0
 
     records = []
-    for ts, row in frame.iterrows():
-        close = _price(row["Close"])
+    for bar in bars:
+        close = _price(bar.close)
         if close is None:
             continue
-        # Timestamps arrive tz-aware from Yahoo; the column is TIMESTAMPTZ,
-        # so they are stored as the instants they actually are.
-        records.append((symbol, ts.to_pydatetime(), close))
+        # Timestamps arrive tz-aware from Alpaca; the column is
+        # TIMESTAMPTZ, so they are stored as the instants they actually
+        # are and the session grouping stays correct in exchange time.
+        records.append((symbol, bar.ts, close))
 
     if not records:
         return 0
