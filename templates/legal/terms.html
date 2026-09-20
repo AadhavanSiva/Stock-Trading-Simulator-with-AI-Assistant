@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "legal/_draft.html" import draft_notice %}
+{% set active = 'legal' %}
+{% block title %}Terms of Service · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">The rules of using this</span>
+    <h1>Terms of Service</h1>
+</div>
+
+{{ draft_notice("document") }}
+
+<div class="panel legal">
+    <h2>What this is</h2>
+    <p>
+        Portfolio Tracker is a free stock market <em>simulator</em> and a
+        personal learning project. It lets you practise buying and selling
+        shares with money that does not exist, using delayed market prices.
+        It is not a broker, not a financial institution, and not a service you
+        can hold real value with. See the
+        <a href="{{ url_for('disclaimer') }}">disclaimer</a> for the detail.
+    </p>
+
+    <h2>Using it</h2>
+    <p>
+        You need a Google account to sign in. You are responsible for keeping
+        that account secure; anyone who can sign in as you can see and change
+        your simulated portfolio.
+    </p>
+    <p>
+        One account per person. Please do not:
+    </p>
+    <ul>
+        <li>
+            create extra accounts to game the leaderboard, or choose a
+            leaderboard name that impersonates someone else, is abusive, or is
+            somebody's real name or email address;
+        </li>
+        <li>
+            automate requests, scrape the site, or make enough of them to
+            affect its availability or its market-data provider's;
+        </li>
+        <li>
+            attempt to reach another user's data, or to bypass the limits and
+            checks in the application;
+        </li>
+        <li>
+            use it for anything unlawful.
+        </li>
+    </ul>
+    <p>
+        A leaderboard name that breaks these rules may be removed, and an
+        account being used to attack the service may be suspended or deleted.
+    </p>
+
+    <h2>Your data</h2>
+    <p>
+        What is collected and what is done with it is set out in the
+        <a href="{{ url_for('privacy') }}">privacy policy</a>. You can export
+        everything or delete your account at any time from your
+        <a href="{{ url_for('account') }}">account page</a>.
+    </p>
+
+    <h2>Availability</h2>
+    <p>
+        This is provided as-is and free of charge, with no guarantee that it
+        works, stays available, or preserves your data. It may go offline, lose
+        data, or be discontinued without notice. Features may change or be
+        removed.
+    </p>
+    <p>
+        Market data comes from a third party and may be delayed, incomplete or
+        unavailable. Nothing here is guaranteed to be accurate.
+    </p>
+
+    <h2>Liability</h2>
+    <p>
+        Because no real money or real securities are involved, using this
+        simulator cannot cause you a financial loss in itself. To the extent
+        the law allows, the author accepts no liability for any loss or damage
+        arising from your use of it — including any decision you make about
+        real investments after using it. Do not treat results here as a reason
+        to do anything with actual money.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+        These terms may change as the project does. Continuing to use the site
+        after a change means accepting the current version.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+        This is a personal project maintained by its author. Questions and bug
+        reports belong on the project's repository.
+    </p>
+</div>
+{% endblock %}

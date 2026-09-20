@@ -1,0 +1,53 @@
+{# The account's value over time.
+
+   Deliberately plainer than the stock chart: no range selector, no
+   readouts, no hover. This answers one question — "is the account worth
+   more than it was" — and a page that leads with holdings should not hand
+   that question a bigger apparatus than the holdings get. #}
+
+{% macro performance_chart(performance) -%}
+    {%- set chart = performance.chart -%}
+    {%- set dir, arrow, word = movement(performance.change) -%}
+    <figure class="chart chart-compact">
+        <div class="chart-frame">
+            <div class="chart-y" aria-hidden="true">
+                {% for tick in chart.y_ticks %}
+                    <span class="y-tick num" style="top: {{ tick.pct }}%">{{ tick.label }}</span>
+                {% endfor %}
+            </div>
+
+            <div class="chart-plot">
+                <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}"
+                     preserveAspectRatio="none" role="img"
+                     aria-labelledby="perf-title perf-desc">
+                    <title id="perf-title">Account value over time</title>
+                    <desc id="perf-desc">
+                        From {{ performance.start_value | money }} to
+                        {{ performance.end_value | money }}: a change of
+                        {{ performance.change | signed_money }}, {{ word }} over
+                        the period, across
+                        {{ '{:,}'.format(performance.samples) }} readings.
+                    </desc>
+
+                    {% for tick in chart.y_ticks %}
+                        <line class="chart-grid" x1="0" y1="{{ tick.y }}"
+                              x2="{{ chart.width }}" y2="{{ tick.y }}"
+                              vector-effect="non-scaling-stroke"></line>
+                    {% endfor %}
+                    <line class="chart-baseline" x1="0" y1="{{ chart.baseline_y }}"
+                          x2="{{ chart.width }}" y2="{{ chart.baseline_y }}"
+                          vector-effect="non-scaling-stroke"></line>
+                    <path class="chart-area" d="{{ chart.area_path }}"></path>
+                    <path class="chart-line" d="{{ chart.path }}"
+                          vector-effect="non-scaling-stroke"></path>
+                </svg>
+            </div>
+
+            <div class="chart-x" aria-hidden="true">
+                {% for tick in chart.x_ticks %}
+                    <span class="x-tick x-tick-{{ tick.edge }}" style="left: {{ tick.pct }}%">{{ tick.label }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </figure>
+{%- endmacro %}

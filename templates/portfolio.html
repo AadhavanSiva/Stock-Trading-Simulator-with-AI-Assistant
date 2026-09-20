@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_delta.html" import delta %}
 {% from "_trades.html" import activity_row %}
+{% from "_performance.html" import performance_chart %}
 {% set active = 'portfolio' %}
 {% block title %}Portfolio · Portfolio Tracker{% endblock %}
 
@@ -57,11 +58,42 @@
             <p class="kpi-foot num">{{ summary.total_percent | percent }} on what you paid</p>
         </div>
         <div class="kpi">
+            <p class="kpi-label">Today</p>
+            {% if summary.todays_change is none %}
+                <p class="kpi-value faint">Not known yet</p>
+                <p class="kpi-foot">Refresh prices to record a previous close</p>
+            {% else %}
+                <p class="kpi-value">{{ delta(summary.todays_change, summary.todays_percent) }}</p>
+                <p class="kpi-foot">Against the previous close</p>
+            {% endif %}
+        </div>
+        <div class="kpi">
+            <p class="kpi-label">Return</p>
+            <p class="kpi-value">{{ total_return | percent }}</p>
+            <p class="kpi-foot">Against the {{ starting_cash | money }} you started with</p>
+        </div>
+        <div class="kpi">
             <p class="kpi-label">Cash available</p>
             <p class="kpi-value">{{ summary.cash | money }}</p>
             <p class="kpi-foot">Buying power</p>
         </div>
     </section>
+
+    {% if performance %}
+        <div class="panel reveal">
+            <div class="panel-head panel-head-row">
+                <div>
+                    <h2>Value over time</h2>
+                    <p class="faint">
+                        {{ '{:,}'.format(performance.samples) }} readings, each taken
+                        when prices were refreshed
+                    </p>
+                </div>
+                <div class="chart-change">{{ delta(performance.change, performance.percent) }}</div>
+            </div>
+            {{ performance_chart(performance) }}
+        </div>
+    {% endif %}
 
     <div class="grid-main">
         <div class="panel panel-flush">
@@ -81,6 +113,7 @@
                         <th scope="col" class="r" data-sort="number">Avg. paid</th>
                         <th scope="col" class="r" data-sort="number">Price</th>
                         <th scope="col" class="r" data-sort="number">Value</th>
+                        <th scope="col" class="r" data-sort="number">Today</th>
                         <th scope="col" class="r" data-sort="number">Gain or loss</th>
                         {# Only worth a column once something has actually been
                            sold; until then it would be a row of dashes. #}
@@ -104,6 +137,13 @@
                             <td class="r num" data-label="Avg. paid" data-value="{{ row.purchase_price }}">{{ row.purchase_price | money }}</td>
                             <td class="r num" data-label="Price" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
                             <td class="r num" data-label="Value" data-value="{{ row.value or 0 }}">{{ row.value | money }}</td>
+                            <td class="r" data-label="Today" data-value="{{ row.todays_change or 0 }}">
+                                {% if row.todays_change is none %}
+                                    <span class="faint">—</span>
+                                {% else %}
+                                    {{ delta(row.todays_change, row.todays_percent) }}
+                                {% endif %}
+                            </td>
                             <td class="r" data-label="Gain or loss" data-value="{{ row.gain_loss or 0 }}">
                                 {{ delta(row.gain_loss, row.percent) }}
                             </td>
@@ -187,6 +227,10 @@
             <div>
                 <dt>Avg. paid</dt>
                 <dd>Your average cost per share. Buying the same company twice blends the two prices together.</dd>
+            </div>
+            <div>
+                <dt>Today</dt>
+                <dd>How far the price has moved since the previous session's close. It shows a dash until a refresh has recorded one.</dd>
             </div>
             <div>
                 <dt>Gain or loss</dt>

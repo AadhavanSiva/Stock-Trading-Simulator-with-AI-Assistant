@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_delta.html" import delta %}
+{% set active = 'watchlist' %}
+{% block title %}Watchlist · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head page-head-row">
+    <div>
+        <span class="label">Following</span>
+        <h1>Watchlist</h1>
+    </div>
+    {% if rows %}
+        <form method="post" action="{{ url_for('watchlist_refresh') }}" class="actions" style="margin-top:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-quiet btn-sm">Refresh prices</button>
+        </form>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <div class="panel-head">
+        <h2>Add a ticker</h2>
+    </div>
+    <form method="post" action="{{ url_for('watchlist_add') }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('watchlist_view') }}">
+        <div class="field" style="margin-bottom:0">
+            <label class="visually-hidden" for="symbol">Ticker symbol</label>
+            <input type="text" id="symbol" name="symbol" class="ticker-input"
+                   placeholder="AAPL" autocomplete="off" required>
+        </div>
+        <button type="submit" class="btn btn-secondary">Follow</button>
+    </form>
+</div>
+
+{% if not rows %}
+    <div class="panel">
+        <div class="empty">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>Nothing followed yet</h2>
+            <p>
+                A watchlist is for companies you want to keep an eye on without
+                buying them. Nothing here costs anything or affects your account
+                value — it is just a list.
+            </p>
+            <div class="actions">
+                <a class="btn btn-primary" href="{{ url_for('buy_start') }}">Look up a company</a>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="panel panel-flush">
+        <div class="panel-head">
+            <h2>Following</h2>
+            <p class="faint">
+                {{ rows | length }} {{ 'company' if rows | length == 1 else 'companies' }}
+            </p>
+        </div>
+        <div class="table-scroll" style="margin-top:var(--s3)">
+            <table data-sortable class="stack-on-mobile">
+                <caption class="visually-hidden">
+                    Companies you follow, with today's price movement.
+                </caption>
+                <thead>
+                <tr>
+                    <th scope="col" data-sort="text">Company</th>
+                    <th scope="col" class="r" data-sort="number">Price</th>
+                    <th scope="col" class="r" data-sort="number">Today</th>
+                    <th scope="col" class="r">Actions</th>
+                </tr>
+                </thead>
+                <tbody class="stagger">
+                {% for row in rows %}
+                    <tr>
+                        <td data-value="{{ row.symbol }}">
+                            <a class="symbol-link" href="{{ url_for('stock_detail', symbol=row.symbol) }}">
+                                <span class="ticker">{{ row.symbol }}</span>
+                                <span class="company">{{ row.company_name }}</span>
+                            </a>
+                            {% if row.owned %}
+                                <span class="side-tag">Held</span>
+                            {% endif %}
+                        </td>
+                        <td class="r num" data-label="Price" data-value="{{ row.price or 0 }}">{{ row.price | money }}</td>
+                        <td class="r" data-label="Today" data-value="{{ row.todays_change or 0 }}">
+                            {% if row.todays_change is none %}
+                                <span class="faint">—</span>
+                            {% else %}
+                                {{ delta(row.todays_change, row.todays_percent) }}
+                            {% endif %}
+                        </td>
+                        <td class="r" data-label="Actions">
+                            <div class="row-actions">
+                                <a class="btn btn-quiet btn-sm" href="{{ url_for('buy_start', symbol=row.symbol) }}">Buy</a>
+                                <form method="post" action="{{ url_for('watchlist_remove') }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="symbol" value="{{ row.symbol }}">
+                                    <input type="hidden" name="next" value="{{ url_for('watchlist_view') }}">
+                                    <button type="submit" class="btn btn-quiet btn-sm">Unfollow</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="glossary reveal">
+        <h3>In plain words</h3>
+        <dl>
+            <div>
+                <dt>Today</dt>
+                <dd>How far the price has moved since the previous session's close. A dash means no close has been recorded yet — refresh to fetch one.</dd>
+            </div>
+            <div>
+                <dt>Watching and owning</dt>
+                <dd>Separate things. A watched company is not part of your account value and costs you nothing; a company you also hold is marked "Held".</dd>
+            </div>
+        </dl>
+    </div>
+{% endif %}
+{% endblock %}

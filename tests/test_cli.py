@@ -18,7 +18,7 @@ def answers(*responses):
 
 def quote(price, name="Test Co"):
     value = Decimal(str(price)) if price is not None else None
-    return patch.object(market_data, "get_quote", return_value=(value, name))
+    return patch.object(market_data, "get_quote", return_value=(value, name, None))
 
 
 def live_price(price):

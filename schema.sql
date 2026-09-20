@@ -15,7 +15,25 @@ CREATE TABLE IF NOT EXISTS users (
     cash         NUMERIC NOT NULL DEFAULT 50000
         CONSTRAINT users_cash_sane
         CHECK (cash >= 0 AND cash <> 'NaN'),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Appearing on the leaderboard is opt-in, and off until someone says
+    -- otherwise. A default of TRUE would publish the standing of every
+    -- account that existed before the feature did, none of which agreed
+    -- to anything.
+    leaderboard_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+    -- The name shown there, chosen for the purpose. The leaderboard never
+    -- renders `email` or `display_name`: both come from Google and are
+    -- usually a real name and a real address, which nobody supplied in
+    -- order to have them published next to their net worth.
+    leaderboard_name TEXT
+        CONSTRAINT users_leaderboard_name_present
+        CHECK (leaderboard_name IS NULL OR length(btrim(leaderboard_name)) > 0),
+    -- Opting in without choosing a name would leave the row with nothing
+    -- safe to display, so the database refuses that combination outright
+    -- rather than leaving the view to pick a fallback — and the obvious
+    -- fallback is exactly the address we are trying not to publish.
+    CONSTRAINT users_leaderboard_needs_a_name
+        CHECK (NOT leaderboard_opt_in OR leaderboard_name IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS stocks (
@@ -24,6 +42,14 @@ CREATE TABLE IF NOT EXISTS stocks (
     current_price NUMERIC
         CONSTRAINT stocks_current_price_sane
         CHECK (current_price IS NULL OR (current_price >= 0 AND current_price <> 'NaN')),
+    -- The previous session's closing price, which is what "today's change"
+    -- is measured from. It comes from the same quote as current_price and
+    -- is stored beside it, because the two have to describe the same
+    -- moment: taking the close from a later lookup than the price would
+    -- report a change across a window nobody asked about.
+    previous_close NUMERIC
+        CONSTRAINT stocks_previous_close_sane
+        CHECK (previous_close IS NULL OR (previous_close >= 0 AND previous_close <> 'NaN')),
     -- When every available day was last downloaded. NULL means only a
     -- partial window is stored, so an "all time" chart must say so rather
     -- than present six months as the whole history.
@@ -196,3 +222,55 @@ DROP TRIGGER IF EXISTS trades_no_rewrite ON trades;
 CREATE TRIGGER trades_no_rewrite
     BEFORE UPDATE OR DELETE ON trades
     FOR EACH ROW EXECUTE FUNCTION trades_append_only();
+
+-- What an account was worth, sampled over time.
+--
+-- Cash plus the market value of the holdings, written whenever prices are
+-- refreshed. This is the only record of the past: `portfolio` holds the
+-- position as it stands now, and nothing else remembers what it was worth
+-- last week, so a performance chart cannot be reconstructed after the fact.
+-- Every sample must therefore be taken at the moment it is true.
+--
+-- The three figures are stored rather than just the total, so a later
+-- reader can tell a gain from a deposit of attention — cash falling while
+-- holdings rise is a purchase, not a loss.
+--
+-- It is also what the leaderboard reads. Ranking accounts by re-pricing
+-- every holding on every page load would mean one market-data pass per
+-- viewer; this table already holds the answer as of the last refresh.
+CREATE TABLE IF NOT EXISTS portfolio_value_history (
+    id             BIGSERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recorded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cash           NUMERIC NOT NULL
+        CONSTRAINT pvh_cash_sane CHECK (cash >= 0 AND cash <> 'NaN'),
+    holdings_value NUMERIC NOT NULL
+        CONSTRAINT pvh_holdings_value_sane
+        CHECK (holdings_value >= 0 AND holdings_value <> 'NaN'),
+    total_value    NUMERIC NOT NULL
+        CONSTRAINT pvh_total_value_sane
+        CHECK (total_value >= 0 AND total_value <> 'NaN')
+);
+
+-- Both reads this serves are "newest first, for one account": the chart
+-- walks back through a window, and the leaderboard takes just the latest.
+CREATE INDEX IF NOT EXISTS portfolio_value_history_user_time_idx
+    ON portfolio_value_history (user_id, recorded_at DESC);
+
+-- Tickers someone follows without owning.
+--
+-- Separate from `portfolio` rather than a flag on it: a holding has shares
+-- and a cost basis, a watched ticker has neither, and widening `portfolio`
+-- to carry zero-share rows would mean every query that reads a position
+-- learning to exclude them. The two answer different questions.
+CREATE TABLE IF NOT EXISTS watchlist (
+    id       SERIAL PRIMARY KEY,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol   TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- One entry per ticker per account, so "add" is idempotent and the
+    -- page cannot list the same company twice.
+    CONSTRAINT watchlist_user_symbol_key UNIQUE (user_id, symbol)
+);
+
+CREATE INDEX IF NOT EXISTS watchlist_user_idx ON watchlist (user_id);

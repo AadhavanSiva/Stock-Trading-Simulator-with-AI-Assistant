@@ -54,7 +54,8 @@ def using(client):
 
 
 def quote():
-    return patch.object(market_data, "get_quote", return_value=(Decimal("332.27"), "Apple Inc."))
+    return patch.object(market_data, "get_quote",
+                        return_value=(Decimal("332.27"), "Apple Inc.", None))
 
 
 

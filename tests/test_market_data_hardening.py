@@ -145,12 +145,12 @@ class TestOutagesAreErrors:
             stocks.upsert_stock(symbol, symbol, Decimal("100"))
             portfolio.record_purchase(user, symbol, symbol, Decimal("100"), Decimal("1"))
 
-        def price(symbol, fresh=False):
+        def quote(symbol, fresh=False):
             if symbol == "AAPL":
                 raise MarketDataUnavailable(symbol)
-            return Decimal("120")
+            return Decimal("120"), symbol, Decimal("118")
 
-        with patch.object(market_data, "get_live_price", side_effect=price):
+        with patch.object(market_data, "get_quote", side_effect=quote):
             report = operations.refresh_prices(user)
         assert report.updated == 1 and report.failed == 1
         failed = [o for o in report.outcomes if not o.ok][0]
@@ -163,7 +163,7 @@ class TestQuoteCache:
         with using(ticker):
             first = market_data.get_quote("TEN")
             second = market_data.get_quote("ten ")
-        assert first == second == (Decimal("10.0"), "Ten")
+        assert first == second == (Decimal("10.0"), "Ten", None)
         assert ticker.created == 1
 
     def test_fresh_bypasses_the_cache_and_updates_it(self):
@@ -232,7 +232,8 @@ class TestWhoGetsAFreshPrice:
     """Pages may reuse a quote for a few seconds; trades never do."""
 
     def spy(self):
-        return patch.object(market_data, "get_quote", return_value=(Decimal("100"), "Test Co"))
+        return patch.object(market_data, "get_quote",
+                            return_value=(Decimal("100"), "Test Co", Decimal("98")))
 
     def test_a_page_lookup_may_use_the_cache(self, user):
         with self.spy() as get_quote:
@@ -252,8 +253,11 @@ class TestWhoGetsAFreshPrice:
         assert live.call_args.kwargs.get("fresh") is True
 
     def test_refreshing_always_fetches_fresh_prices(self, user):
+        """Refresh reads the whole quote, because it stores the previous
+        close beside the price."""
         stocks.upsert_stock("TST", "Test Co", Decimal("100"))
         portfolio.record_purchase(user, "TST", "Test Co", Decimal("100"), Decimal("2"))
-        with patch.object(market_data, "get_live_price", return_value=Decimal("100")) as live:
+        with patch.object(market_data, "get_quote",
+                          return_value=(Decimal("100"), "Test Co", Decimal("99"))) as quote:
             operations.refresh_prices(user)
-        assert live.call_args.kwargs.get("fresh") is True
+        assert quote.call_args.kwargs.get("fresh") is True

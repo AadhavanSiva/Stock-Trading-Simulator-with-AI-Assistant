@@ -15,7 +15,7 @@ services/ respectively.
 """
 import logging
 from collections import namedtuple
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from portfolio_tracker import charts
@@ -23,7 +23,8 @@ from portfolio_tracker.errors import (
     InsufficientFunds, MarketDataUnavailable, UnknownUser, ValidationError,
 )
 from portfolio_tracker.models import (
-    assistant_usage, history, portfolio, stocks, trades, users,
+    assistant_usage, history, leaderboard, portfolio, stocks, trades, users,
+    value_history, watchlist,
 )
 from portfolio_tracker.models.portfolio import to_money
 from portfolio_tracker.services import market_data
@@ -45,6 +46,9 @@ __all__ = [
     "look_up", "buy", "sell", "refresh_prices", "load_all_history",
     "account_summary", "assistant_wait_seconds",
     "recent_activity", "trade_history", "export_account", "delete_account",
+    "record_value_sample", "performance", "percent_return",
+    "leaderboard_standings", "my_standing", "set_leaderboard_participation",
+    "watch", "unwatch", "watchlist_rows", "refresh_watchlist",
 ]
 
 
@@ -77,12 +81,13 @@ Purchase = namedtuple(
 )
 Sale = namedtuple("Sale", "symbol shares price proceeds gain remaining closed cash")
 Quote = namedtuple(
-    "Quote", "symbol company_name price owned average_cost cash affordable"
+    "Quote",
+    "symbol company_name price owned average_cost cash affordable previous_close"
 )
 Summary = namedtuple(
     "Summary",
     "rows unpriced cash holdings_value total_cost total_gain total_percent net_worth "
-    "realized activity",
+    "realized activity todays_change todays_percent",
 )
 TradeRow = namedtuple(
     "TradeRow",
@@ -172,7 +177,7 @@ def look_up(user_id, symbol, fresh=False):
         raise ValidationError("Enter a ticker symbol.")
 
     try:
-        price, company_name = market_data.get_quote(symbol, fresh=fresh)
+        price, company_name, previous_close = market_data.get_quote(symbol, fresh=fresh)
     except Exception as exc:
         raise ValidationError(_market_failure(symbol, exc)) from exc
 
@@ -186,7 +191,7 @@ def look_up(user_id, symbol, fresh=False):
     cash = users.get_cash(user_id)
     return Quote(
         symbol, company_name, price, owned, average_cost,
-        cash, affordable_maximum(cash, price),
+        cash, affordable_maximum(cash, price), previous_close,
     )
 
 
@@ -267,8 +272,11 @@ def account_summary(user_id):
     priced_cost = Decimal(0)
     unpriced = []
 
+    todays_change = Decimal(0)
+    todays_basis = Decimal(0)
+
     holdings = portfolio.get_holdings_with_details(user_id)
-    for symbol, name, held, paid, current, gain in holdings:
+    for symbol, name, held, paid, current, gain, previous_close in holdings:
         cost = held * paid
         row = {
             "symbol": symbol,
@@ -280,6 +288,9 @@ def account_summary(user_id):
             "value": None,
             "gain_loss": None,
             "percent": None,
+            "previous_close": previous_close,
+            "todays_change": None,
+            "todays_percent": None,
         }
         if current is None:
             unpriced.append(symbol)
@@ -289,6 +300,19 @@ def account_summary(user_id):
             row["percent"] = (gain / cost * 100) if cost else Decimal(0)
             holdings_value += row["value"]
             priced_cost += cost
+
+            # Today's move, where a previous close is known. A position
+            # bought this morning has no close to compare against, and its
+            # change stays None rather than becoming a zero that reads as
+            # "unchanged today".
+            if previous_close is not None:
+                row["todays_change"] = (current - previous_close) * held
+                row["todays_percent"] = (
+                    (current - previous_close) / previous_close * 100
+                    if previous_close else None
+                )
+                todays_change += row["todays_change"]
+                todays_basis += previous_close * held
         rows.append(row)
 
     # Realized gain is read from the trade log, which is the only place it
@@ -313,6 +337,10 @@ def account_summary(user_id):
         net_worth=cash + holdings_value,
         realized=realized,
         activity=recent_activity(user_id),
+        # None, not zero, when nothing held has a previous close yet: the
+        # honest answer is "not known", and a zero would claim a flat day.
+        todays_change=todays_change if todays_basis else None,
+        todays_percent=(todays_change / todays_basis * 100) if todays_basis else None,
     )
 
 
@@ -408,17 +436,26 @@ def refresh_prices(user_id, on_start=None):
         if on_start:
             on_start(symbol)
         try:
-            price = market_data.get_live_price(symbol, fresh=True)
+            price, _, previous_close = market_data.get_quote(symbol, fresh=True)
             if price is None:
                 outcomes.append(SymbolOutcome(symbol, False, "no price data available"))
                 failed += 1
                 continue
-            stocks.update_stock_price(symbol, price)
+            # Both from the one quote, so the close and the price they are
+            # compared against describe the same moment.
+            stocks.update_stock_price(symbol, price, previous_close=previous_close)
             outcomes.append(SymbolOutcome(symbol, True, f"${price:,.2f}"))
             updated += 1
         except Exception as exc:
             outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
             failed += 1
+
+    # Sampled after the prices move, not before, so the figure recorded is
+    # the one the refresh just produced. Taken even when every symbol
+    # failed: a flat stretch in the chart is the honest record of a day the
+    # market data could not be reached, and a gap would be read as no
+    # change rather than no reading.
+    record_value_sample(user_id)
 
     return RefreshReport(outcomes, updated, failed, len(symbols))
 
@@ -650,6 +687,7 @@ def export_account(user_id):
             "net_worth": _plain(summary.net_worth),
             "unrealized_gain": _plain(summary.total_gain),
             "realized_gain": _plain(summary.realized.total),
+            "percent_return": _plain(percent_return(user_id, summary=summary)),
         },
     }
 
@@ -675,3 +713,245 @@ def delete_account(user_id, confirmation):
         raise UnknownUser("That account no longer exists.")
     log.info("Account %s deleted at the owner's request", user_id)
     return email
+
+
+# --------------------------------------------------- value over time
+
+Performance = namedtuple(
+    "Performance",
+    "chart start_value end_value change percent samples first_at last_at",
+)
+
+
+def record_value_sample(user_id):
+    """Store what the account is worth right now.
+
+    Valued from stored prices, not live ones: this runs straight after a
+    refresh has written them, and re-quoting here would both double the
+    market-data calls and risk recording a figure the page never showed.
+    """
+    summary = account_summary(user_id)
+    return value_history.record(user_id, summary.cash, summary.holdings_value)
+
+
+def percent_return(user_id, summary=None):
+    """Growth against the cash the account opened with.
+
+    Measured from the starting balance rather than the first sample,
+    because that is the question a paper-trading account actually poses:
+    you were handed a fixed sum and nothing is ever paid in or out, so
+    "what did you turn it into" needs no time-weighting to be fair. It also
+    makes two accounts comparable however long each has been open, which is
+    what the leaderboard needs.
+
+    Returns None when the starting balance is zero, rather than dividing.
+    """
+    if summary is None:
+        summary = account_summary(user_id)
+    opening = users.starting_cash()
+    if not opening:
+        return None
+    return (summary.net_worth - opening) / opening * 100
+
+
+def performance(user_id, days=None, width=720, height=220):
+    """The account's value over time, ready to plot.
+
+    Returns None when there is nothing to draw yet — one sample is a dot,
+    not a line, and the page says so instead of rendering an empty frame.
+    """
+    since = None
+    if days:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    rows = value_history.series(user_id, since=since)
+    if len(rows) < 2:
+        return None
+
+    chart = charts.build(
+        [(charts.point_label(recorded_at), total) for recorded_at, _, _, total in rows],
+        width=width, height=height,
+    )
+    if chart is None:
+        return None
+
+    start_value, end_value = rows[0][3], rows[-1][3]
+    change = end_value - start_value
+    return Performance(
+        chart=chart,
+        start_value=start_value,
+        end_value=end_value,
+        change=change,
+        percent=(change / start_value * 100) if start_value else None,
+        samples=len(rows),
+        first_at=rows[0][0],
+        last_at=rows[-1][0],
+    )
+
+
+# ------------------------------------------------------------ leaderboard
+
+LeaderboardRow = namedtuple(
+    "LeaderboardRow", "rank name total_value percent_return is_you"
+)
+Standing = namedtuple(
+    "Standing", "rank total_value percent_return opted_in participants as_of"
+)
+
+# Long enough to be distinctive, short enough to sit in a table cell.
+LEADERBOARD_NAME_MAX = 24
+
+
+def _return_on(total_value):
+    """Percent growth of a total against the opening balance."""
+    opening = users.starting_cash()
+    if not opening or total_value is None:
+        return None
+    return (Decimal(total_value) - opening) / opening * 100
+
+
+def validate_leaderboard_name(name, user_id=None):
+    """Check a chosen leaderboard name, or explain why it will not do.
+
+    An email address is rejected outright rather than trimmed into shape:
+    someone typing one has misunderstood what this field is for, and the
+    whole point of it is that no address reaches the page.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValidationError("Choose a name to appear under.")
+    if len(name) > LEADERBOARD_NAME_MAX:
+        raise ValidationError(
+            f"That name is too long — {LEADERBOARD_NAME_MAX} characters at most."
+        )
+    if "@" in name:
+        raise ValidationError(
+            "Please choose a nickname rather than an email address. The "
+            "leaderboard is public to other players, and this is the only "
+            "thing they see."
+        )
+    if leaderboard.name_taken(name, excluding_user_id=user_id):
+        raise ValidationError("Someone is already using that name. Try another.")
+    return name
+
+
+def set_leaderboard_participation(user_id, opt_in, name=None):
+    """Join or leave the leaderboard.
+
+    Joining requires a name; leaving does not, and keeps whatever was
+    chosen so rejoining need not start over.
+    """
+    if opt_in:
+        name = validate_leaderboard_name(name, user_id=user_id)
+    return users.set_leaderboard_settings(user_id, opt_in, leaderboard_name=name)
+
+
+def leaderboard_standings(user_id=None, limit=50):
+    """The public table: a name, a total and a return, and nothing else."""
+    rows = []
+    for rank, row_user_id, name, total_value, _ in leaderboard.standings(limit=limit):
+        rows.append(LeaderboardRow(
+            rank=rank,
+            name=name,
+            total_value=total_value,
+            percent_return=_return_on(total_value),
+            is_you=(user_id is not None and row_user_id == user_id),
+        ))
+    return rows
+
+
+def my_standing(user_id):
+    """Where one account stands, opted in or not.
+
+    Returns None when the account has never been valued — a refresh has to
+    have happened before there is anything to rank.
+    """
+    row = leaderboard.standing_for(user_id)
+    if row is None:
+        return None
+    rank, total_value, recorded_at, opted_in, participants = row
+    return Standing(
+        rank=rank,
+        total_value=total_value,
+        percent_return=_return_on(total_value),
+        opted_in=opted_in,
+        participants=participants,
+        as_of=recorded_at,
+    )
+
+
+# -------------------------------------------------------------- watchlist
+
+WatchRow = namedtuple(
+    "WatchRow",
+    "symbol company_name price previous_close todays_change todays_percent "
+    "owned added_at",
+)
+
+
+def watch(user_id, symbol):
+    """Follow a ticker.
+
+    The symbol is priced before it is stored, which both rejects a
+    typo before it reaches the list and registers the company in `stocks`
+    — the foreign key needs a row there, and a watchlist is often the
+    first place a ticker is mentioned.
+    """
+    quote = look_up(user_id, symbol)
+    stocks.upsert_stock(quote.symbol, quote.company_name, quote.price,
+                        previous_close=quote.previous_close)
+    added = watchlist.add(user_id, quote.symbol)
+    return quote.symbol, added
+
+
+def unwatch(user_id, symbol):
+    return watchlist.remove(user_id, (symbol or "").strip().upper())
+
+
+def watchlist_rows(user_id):
+    """The followed tickers, with today's move on each."""
+    rows = []
+    for symbol, name, price, previous_close, added_at, owned in watchlist.entries(user_id):
+        change = percent = None
+        if price is not None and previous_close:
+            change = price - previous_close
+            percent = change / previous_close * 100
+        rows.append(WatchRow(
+            symbol=symbol,
+            company_name=name or symbol,
+            price=price,
+            previous_close=previous_close,
+            todays_change=change,
+            todays_percent=percent,
+            owned=owned,
+            added_at=added_at,
+        ))
+    return rows
+
+
+def refresh_watchlist(user_id, on_start=None):
+    """Re-quote every followed ticker.
+
+    Separate from refresh_prices, which exists to re-value holdings and
+    takes a portfolio sample afterwards. A watched ticker is not part of
+    the account's value, so quoting one must not move the performance
+    chart.
+    """
+    outcomes = []
+    updated = failed = 0
+    for symbol in watchlist.symbols(user_id):
+        if on_start:
+            on_start(symbol)
+        try:
+            price, _, previous_close = market_data.get_quote(symbol, fresh=True)
+            if price is None:
+                outcomes.append(SymbolOutcome(symbol, False, "no price data available"))
+                failed += 1
+                continue
+            stocks.update_stock_price(symbol, price, previous_close=previous_close)
+            outcomes.append(SymbolOutcome(symbol, True, f"${price:,.2f}"))
+            updated += 1
+        except Exception as exc:
+            outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
+            failed += 1
+    return RefreshReport(outcomes, updated, failed, len(outcomes))

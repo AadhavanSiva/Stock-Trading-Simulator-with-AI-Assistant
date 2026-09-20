@@ -23,7 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
-from portfolio_tracker.models import history, portfolio, stocks, users
+from portfolio_tracker.models import history, portfolio, stocks, users, watchlist
 from portfolio_tracker.services import assistant
 
 log = logging.getLogger(__name__)
@@ -90,8 +90,12 @@ def login_required(view):
 def inject_user():
     """Make the signed-in account available to every template."""
     account = getattr(g, "user", None)
+    # The opening balance is context for every figure on the site — a
+    # return means nothing without the number it is measured against — so
+    # it is injected here rather than passed by each route that shows one.
     if account is None:
-        return {"current_user": None, "assistant_enabled": False}
+        return {"current_user": None, "assistant_enabled": False,
+                "starting_cash": users.starting_cash()}
     _, _, email, display_name, cash = account
     return {
         "current_user": {
@@ -99,6 +103,7 @@ def inject_user():
             "display_name": display_name or email,
             "cash": cash,
         },
+        "starting_cash": users.starting_cash(),
         "assistant_enabled": config.ASSISTANT_ENABLED,
         "assistant_research": assistant.research_available(),
     }
@@ -369,10 +374,13 @@ def index():
         return redirect(url_for("login"))
 
     g.user, g.user_id = account, account[0]
+    summary = operations.account_summary(g.user_id)
     return render_template(
         "portfolio.html",
         motion="calm",
-        summary=operations.account_summary(g.user_id),
+        summary=summary,
+        performance=operations.performance(g.user_id),
+        total_return=operations.percent_return(g.user_id, summary=summary),
         # Names the position just traded, so its row settles in rather than
         # appearing without explanation. Identical for a buy and a sell —
         # a trade is a decision, not an achievement.
@@ -513,6 +521,7 @@ def stock_detail(symbol):
         motion="calm",
         symbol=symbol,
         quote=quote,
+        watching=watchlist.contains(g.user_id, symbol),
         chart=chart,
         readouts=charts.readouts(chart),
         window=window,
@@ -823,7 +832,8 @@ def history_view():
     highs_lows = {symbol: (high, low) for symbol, high, low in history.get_high_low()}
 
     rows = []
-    for symbol, name, held, paid, current, gain in portfolio.get_holdings_with_details(g.user_id):
+    for (symbol, name, held, paid, current, gain,
+         _previous_close) in portfolio.get_holdings_with_details(g.user_id):
         high, low = highs_lows.get(symbol, (None, None))
         rows.append({
             "symbol": symbol,
@@ -851,17 +861,138 @@ def trades_view():
     )
 
 
+# ------------------------------------------------------------ policies
+
+# Reachable signed out: someone deciding whether to sign up needs to be
+# able to read these first, which is the only moment they are much use.
+
+@app.route("/terms")
+def terms():
+    return render_template("legal/terms.html", motion="calm")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("legal/privacy.html", motion="calm")
+
+
+@app.route("/disclaimer")
+def disclaimer():
+    return render_template("legal/disclaimer.html", motion="calm")
+
+
+# -------------------------------------------------------------- watchlist
+
+@app.route("/watchlist")
+@login_required
+def watchlist_view():
+    return render_template(
+        "watchlist.html",
+        motion="calm",
+        rows=operations.watchlist_rows(g.user_id),
+    )
+
+
+@app.route("/watchlist/add", methods=["POST"])
+@login_required
+def watchlist_add():
+    """Follow a ticker. Reached from the stock page and the watchlist."""
+    try:
+        symbol, added = operations.watch(g.user_id, request.form.get("symbol"))
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
+
+    flash(f"{symbol} added to your watchlist." if added
+          else f"{symbol} is already on your watchlist.", "success")
+    return redirect(safe_next(request.form.get("next"))
+                    or url_for("stock_detail", symbol=symbol))
+
+
+@app.route("/watchlist/remove", methods=["POST"])
+@login_required
+def watchlist_remove():
+    symbol = (request.form.get("symbol") or "").strip().upper()
+    if operations.unwatch(g.user_id, symbol):
+        flash(f"{symbol} removed from your watchlist.", "notice")
+    return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
+
+
+@app.route("/watchlist/refresh", methods=["POST"])
+@login_required
+def watchlist_refresh():
+    """Re-quote the watched tickers.
+
+    Separate from the holdings refresh: a watched ticker is not part of
+    the account's value, so quoting one must not move the performance
+    chart or the leaderboard standing.
+    """
+    report = operations.refresh_watchlist(g.user_id)
+    if not report.total:
+        flash("Nothing on your watchlist yet.", "notice")
+    else:
+        flash(f"Refreshed {report.updated} of {report.total}."
+              + (f" {report.failed} could not be updated." if report.failed else ""),
+              "success" if not report.failed else "notice")
+    return redirect(url_for("watchlist_view"))
+
+
+# ------------------------------------------------------------ leaderboard
+
+@app.route("/leaderboard")
+@login_required
+def leaderboard_view():
+    """Ranked by account value, among those who asked to be listed.
+
+    The viewer's own standing is shown whether or not they opted in: the
+    question "where would I come" is the one that makes the choice to join
+    an informed one.
+    """
+    return render_template(
+        "leaderboard.html",
+        motion="calm",
+        rows=operations.leaderboard_standings(user_id=g.user_id),
+        standing=operations.my_standing(g.user_id),
+    )
+
+
+@app.route("/account/leaderboard", methods=["POST"])
+@login_required
+def account_leaderboard():
+    """Join or leave the leaderboard, from account settings."""
+    joining = request.form.get("opt_in") == "on"
+    try:
+        operations.set_leaderboard_participation(
+            g.user_id, joining, name=request.form.get("leaderboard_name")
+        )
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account"))
+
+    flash(
+        "You are on the leaderboard now." if joining
+        else "You have been taken off the leaderboard.",
+        "success",
+    )
+    return redirect(url_for("account"))
+
+
 # ---------------------------------------------------------------- account
 
 @app.route("/account")
 @login_required
 def account():
     """Where the account itself is managed: taking the data out, or ending it."""
+    opted_in, leaderboard_name = users.get_leaderboard_settings(g.user_id)
     return render_template(
         "account.html",
         motion="calm",
         trade_count=operations.trade_history(g.user_id, page=1, page_size=1).total,
         confirmation=operations.DELETE_CONFIRMATION,
+        leaderboard_opt_in=opted_in,
+        leaderboard_name=leaderboard_name,
+        leaderboard_name_max=operations.LEADERBOARD_NAME_MAX,
+        standing=operations.my_standing(g.user_id),
     )
 
 

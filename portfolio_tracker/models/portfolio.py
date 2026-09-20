@@ -64,14 +64,16 @@ def get_holdings_with_prices(user_id):
 
 def get_holdings_with_details(user_id):
     """As above, with the company name inserted after the symbol:
-        (symbol, company_name, shares, purchase_price, current_price, gain_loss)
+        (symbol, company_name, shares, purchase_price, current_price,
+         gain_loss, previous_close)
     """
     with cursor() as cur:
         cur.execute("""
             SELECT portfolio.symbol, stocks.company_name,
                    portfolio.shares, portfolio.purchase_price,
                    stocks.current_price,
-                   (stocks.current_price - portfolio.purchase_price) * portfolio.shares AS gain_loss
+                   (stocks.current_price - portfolio.purchase_price) * portfolio.shares AS gain_loss,
+                   stocks.previous_close
             FROM portfolio
             LEFT JOIN stocks ON portfolio.symbol = stocks.symbol
             WHERE portfolio.user_id = %s

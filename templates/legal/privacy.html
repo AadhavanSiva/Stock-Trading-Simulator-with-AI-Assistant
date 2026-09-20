@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% from "legal/_draft.html" import draft_notice %}
+{% set active = 'legal' %}
+{% block title %}Privacy Policy · Portfolio Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">How your data is handled</span>
+    <h1>Privacy Policy</h1>
+</div>
+
+{{ draft_notice("privacy policy") }}
+
+<div class="panel legal">
+    <h2>What is collected</h2>
+    <p>
+        Only what the application needs to work. In full:
+    </p>
+    <ul>
+        <li>
+            <strong>Your Google account identifier</strong> — the <code>sub</code>
+            claim Google returns when you sign in. This is a number that
+            identifies your account to this application and nothing else. It is
+            used instead of your email address because it does not change when
+            your email does.
+        </li>
+        <li>
+            <strong>Your email address and display name</strong>, as Google
+            reports them. The email identifies your account to you; the name is
+            shown to you in the header. Both are refreshed each time you sign
+            in.
+        </li>
+        <li>
+            <strong>Your trading activity</strong> — your cash balance, your
+            positions, and a record of every simulated buy and sell with its
+            price, quantity and time. All of it is made up; none of it
+            corresponds to real holdings.
+        </li>
+        <li>
+            <strong>Snapshots of your account value</strong>, taken when prices
+            are refreshed, so the performance chart has something to draw.
+        </li>
+        <li>
+            <strong>Your watchlist</strong>, and your leaderboard setting and
+            chosen leaderboard name if you set one.
+        </li>
+        <li>
+            <strong>A count of assistant questions</strong>, with timestamps, to
+            enforce the rate limit. The questions themselves are not stored.
+        </li>
+    </ul>
+    <p>
+        No password is collected, because there is none — signing in is handled
+        by Google. No payment details are collected, because there is nothing
+        to pay for. There is no analytics, no advertising and no tracking of
+        any kind.
+    </p>
+
+    <h2>How it is used</h2>
+    <p>
+        To run the application for you: to show your portfolio, price it, keep
+        your history, and rank you on the leaderboard if you have asked to
+        appear there. That is the whole of it.
+    </p>
+
+    <h2>It is never sold</h2>
+    <p>
+        Your data is <strong>never sold, rented, traded or shared for
+        advertising</strong>, and it is not used to build a profile of you.
+    </p>
+    <p>
+        Three third parties see data in the course of the app working, and only
+        what they need:
+    </p>
+    <ul>
+        <li>
+            <strong>Google</strong> handles sign-in, and therefore knows you
+            signed in here.
+        </li>
+        <li>
+            <strong>Yahoo Finance</strong> receives the ticker symbols being
+            priced. It is not told who asked.
+        </li>
+        <li>
+            <strong>Google Gemini</strong> receives your question and the
+            portfolio figures relevant to it when you use Ask, in order to
+            answer. If you would rather it did not, do not use Ask.
+        </li>
+    </ul>
+
+    <h2>What other people can see</h2>
+    <p>
+        By default, nothing. Your holdings, trades, cash balance and account
+        value are visible only to you.
+    </p>
+    <p>
+        The single exception is the leaderboard, which is
+        <strong>off unless you turn it on</strong>. If you opt in, other
+        signed-in users see the nickname you chose, your total account value and
+        your percent return — and nothing else. They never see your real name,
+        your email address, what you hold, what you have traded, or how much
+        cash you have. You can leave at any time from your account page, and
+        your entry disappears immediately.
+    </p>
+
+    <h2>Exporting your data</h2>
+    <p>
+        Your <a href="{{ url_for('account') }}">account page</a> has a
+        <strong>Download my data</strong> link that gives you a JSON file
+        containing your profile, every holding with what you paid for it, and
+        your complete trade history. It is a plain, readable file you can keep
+        or load elsewhere — not a screenshot of a table.
+    </p>
+
+    <h2>Deleting your data</h2>
+    <p>
+        The same page has a <strong>Delete this account</strong> option. It asks
+        you to type the word <code>DELETE</code>, because a button on its own is
+        one mis-click away from losing everything.
+    </p>
+    <p>
+        Deleting removes your account row, your cash balance, every position,
+        your entire trade history, your account value snapshots, your watchlist
+        and your leaderboard entry. It happens in a single database transaction,
+        so it either all goes or none of it does. <strong>It cannot be
+        undone</strong> — there is no backup to restore from and no way for
+        anyone to recover it for you.
+    </p>
+    <p>
+        Market price data is not deleted, because it was never yours: the price
+        of a share is the same for everyone and is not linked to any account.
+    </p>
+
+    <h2>How long it is kept</h2>
+    <p>
+        Until you delete it, or until this application stops running. Being a
+        personal project, it may be taken down at any time, and its data may go
+        with it.
+    </p>
+
+    <h2>Cookies</h2>
+    <p>
+        One cookie, holding your signed-in session and the token that protects
+        forms from cross-site submission. It is not used for tracking. Signing
+        out clears it.
+    </p>
+</div>
+{% endblock %}

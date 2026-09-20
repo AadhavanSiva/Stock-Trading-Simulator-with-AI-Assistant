@@ -20,6 +20,15 @@
             <li><span class="tick" aria-hidden="true">—</span> No card, no cost, no real money anywhere</li>
         </ul>
 
+        {# Stated before the account exists, not buried afterwards: this is
+           the moment the terms are actually being agreed to. #}
+        <p class="gate-terms faint">
+            This is a simulation using delayed prices. No real money is involved
+            and nothing here is investment advice. By opening an account you
+            agree to the <a href="{{ url_for('terms') }}">Terms of Service</a>
+            and the <a href="{{ url_for('privacy') }}">Privacy Policy</a>.
+        </p>
+
         <p class="gate-alt">
             Already have an account? <a href="{{ url_for('login') }}">Log in</a>
         </p>

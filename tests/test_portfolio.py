@@ -247,6 +247,7 @@ class TestHoldingsWithPrices:
     def test_gain_loss_is_computed(self, seeded):
         buy(seeded, "AAPL", 10, 100)
         stocks.update_stock_price("AAPL", Decimal("200"))
-        symbol, name, shares, cost, current, gain = portfolio.get_holdings_with_details(seeded)[0]
+        (symbol, name, shares, cost, current, gain,
+         previous_close) = portfolio.get_holdings_with_details(seeded)[0]
         assert current == Decimal("200")
         assert gain == Decimal("1000")  # (200 - 100) * 10
