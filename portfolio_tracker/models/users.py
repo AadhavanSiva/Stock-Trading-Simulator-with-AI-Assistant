@@ -1,9 +1,10 @@
 """Accounts and their cash balances."""
+import psycopg2
 from decimal import Decimal
 
 from portfolio_tracker import config
 from portfolio_tracker.db import cursor
-from portfolio_tracker.errors import UnknownUser
+from portfolio_tracker.errors import UnknownUser, ValidationError
 
 
 def starting_cash():
@@ -187,21 +188,32 @@ def set_leaderboard_settings(user_id, opt_in, leaderboard_name=None):
     email address.
     """
     name = (leaderboard_name or "").strip() or None
-    with cursor(commit=True) as cur:
-        cur.execute(
-            """
-            UPDATE users
-            SET leaderboard_opt_in = %s,
-                leaderboard_name = COALESCE(%s, leaderboard_name)
-            WHERE id = %s
-            RETURNING leaderboard_opt_in, leaderboard_name
-            """,
-            (bool(opt_in), name, user_id),
-        )
-        row = cur.fetchone()
-        if row is None:
-            raise UnknownUser(f"No account with id {user_id}.")
-        return row
+    try:
+        with cursor(commit=True) as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET leaderboard_opt_in = %s,
+                    leaderboard_name = COALESCE(%s, leaderboard_name)
+                WHERE id = %s
+                RETURNING leaderboard_opt_in, leaderboard_name
+                """,
+                (bool(opt_in), name, user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise UnknownUser(f"No account with id {user_id}.")
+            return row
+    except psycopg2.errors.UniqueViolation:
+        # users_leaderboard_name_key. The caller checks for a clash first so
+        # the usual path gives a readable message, but that check and this
+        # update are two statements: two people claiming one name at the
+        # same moment both pass it and the index refuses the second. Phrased
+        # the same way here, so which of the two paths refused it is not
+        # something the reader has to care about.
+        raise ValidationError(
+            "Someone is already using that name. Try another."
+        ) from None
 
 
 def delete_account(user_id):

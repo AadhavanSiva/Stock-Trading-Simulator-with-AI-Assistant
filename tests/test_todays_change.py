@@ -160,3 +160,33 @@ class TestThePage:
     def test_the_glossary_explains_it(self, client, seeded):
         hold(seeded, "AAPL", "10", "100")
         assert b"since the previous session" in client.get("/").data
+
+
+class TestAZeroCloseIsNotAPrice:
+    """previous_close is divided by and summed into a basis, so zero is not
+    a usable value — NULL is how "not known" is spelled."""
+
+    def test_the_database_refuses_zero(self, seeded):
+        with pytest.raises(Exception):
+            with cursor(commit=True) as cur:
+                cur.execute("UPDATE stocks SET previous_close = 0 WHERE symbol = 'AAPL'")
+
+    def test_a_positive_close_is_still_accepted(self, seeded):
+        with cursor(commit=True) as cur:
+            cur.execute("UPDATE stocks SET previous_close = 0.01 WHERE symbol = 'AAPL'")
+        with cursor() as cur:
+            cur.execute("SELECT previous_close FROM stocks WHERE symbol = 'AAPL'")
+            assert cur.fetchone()[0] == Decimal("0.01")
+
+    def test_null_is_still_accepted(self, seeded):
+        with cursor(commit=True) as cur:
+            cur.execute("UPDATE stocks SET previous_close = NULL WHERE symbol = 'AAPL'")
+        assert operations.account_summary(seeded).todays_change is None
+
+    def test_current_price_may_still_be_zero(self, seeded):
+        """It is only ever displayed, never divided by."""
+        with cursor(commit=True) as cur:
+            cur.execute("UPDATE stocks SET current_price = 0 WHERE symbol = 'AAPL'")
+        with cursor() as cur:
+            cur.execute("SELECT current_price FROM stocks WHERE symbol = 'AAPL'")
+            assert cur.fetchone()[0] == 0

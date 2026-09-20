@@ -424,6 +424,18 @@ cannot fail halfway on data that predates it. A nonsense price becomes
 `NULL` rather than being deleted, since `NULL` is what the loaders already
 write for a gap and deleting would lose the whole trading day.
 
+Migrations 012 and 013 close two gaps where the application assumed
+something the schema permitted: a unique index on the leaderboard name, so
+two people claiming one at the same moment cannot both pass the
+application's check, and `previous_close > 0`, since that column is divided
+by and summed into a basis — a zero would contribute a whole position's
+value to the day's change while contributing nothing to its basis.
+
+```bash
+psql -U postgres -d practice -f migrations/012_leaderboard_name_unique.sql
+psql -U postgres -d practice -f migrations/013_previous_close_positive.sql
+```
+
 Every migration is safe to re-run, and `python -m portfolio_tracker.init_db`
 runs all of them after `schema.sql`. That pairing is deliberate:
 `schema.sql` is written in `CREATE ... IF NOT EXISTS` and so never alters a
