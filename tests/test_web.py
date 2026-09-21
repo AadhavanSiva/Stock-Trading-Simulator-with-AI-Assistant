@@ -197,10 +197,24 @@ class TestBuyFlow:
         assert "332.7787" in body   # 50000 / 150.25, truncated
 
     def test_unknown_ticker_is_rejected_clearly(self, client):
-        with quote(None):
+        """An unpriceable ticker that also matches no company name.
+
+        The buy field now falls back to a name search, so this needs the
+        catalogue stubbed empty as well — otherwise "BOGUS" would be
+        offered as a search instead of refused, which is right for a
+        company name and wrong for a typo.
+        """
+        with quote(None), patch.object(market_data, "search_assets", return_value=[]):
             response = client.post("/buy/lookup", data={"symbol": "BOGUS"})
         assert response.status_code == 400
         assert "No market data found" in text(response)
+
+    def test_a_company_name_is_offered_as_a_search_instead(self, client):
+        matches = [{"symbol": "AAPL", "name": "Apple Inc."}]
+        with quote(None), patch.object(market_data, "search_assets", return_value=matches):
+            response = client.post("/buy/lookup", data={"symbol": "apple"})
+        assert response.status_code == 302
+        assert "/search" in response.headers["Location"]
 
     def test_review_shows_cost_and_cash_afterwards(self, client):
         with quote("100"):

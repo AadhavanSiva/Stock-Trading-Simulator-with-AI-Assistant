@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set active = 'buy' %}
+{% block title %}Search · Portfolio Tracker{% endblock %}
+
+{# The no-JavaScript path, and the one the buy form falls back to when what
+   you typed is not a ticker. The live dropdown is an enhancement over
+   this page, never a replacement — everything here works from a plain
+   form submit. #}
+
+{% block content %}
+<div class="page-head">
+    <span class="label">Find a company</span>
+    <h1>Search</h1>
+</div>
+
+<div class="panel">
+    <form method="get" action="{{ url_for('search') }}" class="inline-form">
+        <input type="hidden" name="for" value="{{ target_key }}">
+        <div class="field" style="margin-bottom:0; max-width:22rem">
+            <label class="visually-hidden" for="q">Company name or ticker</label>
+            <input type="text" id="q" name="q" value="{{ query }}"
+                   placeholder="Apple, or AAPL" autocomplete="off"
+                   autofocus aria-describedby="search-help">
+        </div>
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+    <p class="field-help" id="search-help" style="margin-top:var(--s3)">
+        Type a company's name or its ticker symbol. You don't need to know
+        the ticker — searching for <strong>Apple</strong> will find it.
+    </p>
+</div>
+
+{% if query and not results %}
+    <div class="panel">
+        <div class="empty">
+            <div class="empty-rule" aria-hidden="true"></div>
+            <h2>Nothing matched “{{ query }}”</h2>
+            <p>
+                No tradable company matched that. Check the spelling, or try
+                a shorter piece of the name — searching <strong>berk</strong>
+                finds Berkshire Hathaway.
+            </p>
+            <p class="faint">
+                Only US-listed stocks and funds that can be traded here are
+                searchable. Crypto and delisted companies are not.
+            </p>
+        </div>
+    </div>
+{% elif results %}
+    <div class="panel panel-flush">
+        <div class="panel-head">
+            <h2>{{ results | length }}
+                {{ 'match' if results | length == 1 else 'matches' }}</h2>
+            <p class="faint">Closest first</p>
+        </div>
+        <div class="table-scroll" style="margin-top:var(--s3)">
+            <table class="stack-on-mobile">
+                <caption class="visually-hidden">
+                    Companies matching “{{ query }}”, closest match first.
+                </caption>
+                <thead>
+                <tr>
+                    <th scope="col">Company</th>
+                    <th scope="col">Ticker</th>
+                    <th scope="col" class="r">Action</th>
+                </tr>
+                </thead>
+                <tbody class="stagger">
+                {% for row in results %}
+                    <tr>
+                        <td data-label="Company">{{ row.name }}</td>
+                        {# The ticker is shown, not hidden behind the name:
+                           the point is that you learn it, not that you are
+                           spared it. #}
+                        <td data-label="Ticker"><span class="ticker">{{ row.symbol }}</span></td>
+                        <td class="r" data-label="Action">
+                            <div class="row-actions">
+                                <a class="btn btn-quiet btn-sm"
+                                   href="{{ url_for('stock_detail', symbol=row.symbol) }}">Details</a>
+                                <form method="post" action="{{ url_for(target.action) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="{{ target.field }}" value="{{ row.symbol }}">
+                                    <button type="submit" class="btn btn-secondary btn-sm">
+                                        {{ target.label }}
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

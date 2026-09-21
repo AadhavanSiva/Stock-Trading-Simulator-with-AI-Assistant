@@ -22,6 +22,7 @@ there is nothing to parse into a frame and no reason for a caller to need
 pandas to read one.
 """
 import logging
+import re
 import threading
 import time
 from collections import namedtuple
@@ -222,11 +223,14 @@ def _request(url, params=None, timeout=None, symbol=None, allow_404=False):
 # --------------------------------------------------------- the catalogue
 
 def clear_quote_cache():
-    """Forget every cached quote and asset. Used between tests."""
+    """Forget every cached quote, asset and the search catalogue."""
     with _quotes_lock:
         _quotes.clear()
     with _assets_lock:
         _assets.clear()
+    with _catalogue_lock:
+        _catalogue["assets"] = []
+        _catalogue["expires"] = 0.0
 
 
 def resolve_symbol(symbol, fresh=False):
@@ -556,3 +560,152 @@ def get_intraday(symbol, period="1d", interval="5m"):
     timeframe = TIMEFRAMES.get(interval, "5Min")
     return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT,
                     intraday=True)
+
+
+# ------------------------------------------------------------- the search
+
+# The whole tradable catalogue, for searching by company name. Fetched in
+# one request and held for a day, like the per-symbol entries above and
+# for the same reason: a listing changes with corporate actions, not with
+# the minute.
+#
+# Note this is a *different* cache from _assets. That one is filled lazily,
+# one symbol at a time, by lookups that already know the ticker — it can
+# never answer "what is Apple's symbol", because a symbol nobody has
+# looked up yet is not in it.
+_CATALOGUE_SECONDS = 24 * 60 * 60
+_catalogue = {"expires": 0.0, "assets": []}
+_catalogue_lock = threading.Lock()
+
+# Trailing words that describe how a security is listed rather than what
+# it is. Stripped for display only.
+#
+# What is deliberately NOT here matters more: Class, Series, ETF, Fund,
+# Trust, Warrant, Right and Unit all distinguish one instrument from
+# another. Stripping "Class B" would render BRK.A and BRK.B identically,
+# which is the one outcome this feature must not produce.
+_LISTING_SUFFIXES = (
+    "common stock", "common shares", "ordinary shares",
+    "american depositary shares", "american depositary receipt",
+)
+
+
+def display_name(name):
+    """A company name with listing boilerplate trimmed off the end.
+
+    Display only. Matching always runs against the raw name as well, so
+    trimming can never make a company unfindable, and nothing is ever
+    merged: two assets that trim to the same text remain two results,
+    told apart by the symbol, which is always shown.
+    """
+    if not name:
+        return name
+    trimmed = name.strip()
+    lowered = trimmed.lower()
+    for suffix in _LISTING_SUFFIXES:
+        if lowered.endswith(suffix) and len(trimmed) > len(suffix) + 1:
+            return trimmed[: -len(suffix)].strip(" -,")
+    return trimmed
+
+
+def catalogue(fresh=False):
+    """Every tradable US equity Alpaca lists: [{symbol, name}, ...]."""
+    if not fresh:
+        with _catalogue_lock:
+            if _catalogue["expires"] > time.monotonic() and _catalogue["assets"]:
+                return _catalogue["assets"]
+
+    rows = _request(
+        f"{config.ALPACA_TRADING_URL}/v2/assets",
+        params={"status": "active", "asset_class": "us_equity"},
+        timeout=config.MARKET_HISTORY_TIMEOUT,
+        symbol="catalogue",
+    ) or []
+
+    # Only what the search needs. The full payload is ~6 MB; this is ~1 MB,
+    # and the rest would be held for a day for nothing.
+    assets = [
+        {"symbol": row["symbol"], "name": row.get("name") or row["symbol"]}
+        for row in rows
+        if row.get("tradable") and row.get("symbol")
+    ]
+    with _catalogue_lock:
+        _catalogue["assets"] = assets
+        _catalogue["expires"] = time.monotonic() + _CATALOGUE_SECONDS
+    log.info("Loaded %s tradable assets into the search catalogue", len(assets))
+    return assets
+
+
+def _word_starts(haystack, needle):
+    """True when some word in `haystack` begins with `needle`."""
+    for part in re.split(r"[^a-z0-9]+", haystack):
+        if part.startswith(needle):
+            return True
+    return False
+
+
+def search_assets(query, limit=8):
+    """Find tradable assets by ticker or company name, best match first.
+
+    Ranking is the substance of this, not a refinement. A plain substring
+    search for "apple" returns Maui Land & Pineapple, Pineapple Financial
+    and two leveraged Apple ETFs before Apple itself — which for someone
+    who does not yet know that Apple is AAPL is worse than no search,
+    because the plausible-looking answer is a 2x derivative.
+
+    So matches are tiered, and only sorted within a tier:
+
+        0  the symbol, exactly
+        1  the symbol starts with it
+        2  the name starts with it          <- "Apple Inc." for "apple"
+        3  some word in the name starts with it
+        4  it appears anywhere in the name
+
+    "Pineapple" has no word starting with "apple", so it can only reach
+    tier 4. Nothing is filtered or penalised by what kind of security it
+    is: the tiers sink derivative products on their own, and a hand-made
+    blocklist would be this app deciding what you are allowed to find.
+    """
+    needle = (query or "").strip().lower()
+    if len(needle) < 1:
+        return []
+
+    try:
+        assets = catalogue()
+    except MarketDataUnavailable:
+        # Search is an aid, not the mechanism: a typed ticker still works.
+        log.warning("Asset catalogue unavailable; search returning nothing")
+        return []
+
+    scored = []
+    for asset in assets:
+        symbol = asset["symbol"]
+        symbol_lower = symbol.lower()
+        raw = asset["name"]
+        shown = display_name(raw)
+        # Matched against both, so trimming for display can never hide a
+        # company whose boilerplate the reader actually typed.
+        hay = f"{raw}\n{shown}".lower()
+
+        if symbol_lower == needle:
+            tier = 0
+        elif symbol_lower.startswith(needle):
+            tier = 1
+        elif hay.startswith(needle) or shown.lower().startswith(needle):
+            tier = 2
+        elif _word_starts(hay, needle):
+            tier = 3
+        elif needle in hay or needle in symbol_lower:
+            tier = 4
+        else:
+            continue
+
+        # Within a tier, the shorter name is the plainer one: "Apple Inc."
+        # before "Apple Hospitality REIT", "Vanguard S&P 500 ETF" before
+        # "Vanguard S&P Mid-Cap 400 Growth ETF".
+        scored.append((tier, len(shown), symbol, shown))
+        if tier == 0 and len(scored) > limit * 4:
+            break
+
+    scored.sort(key=lambda row: (row[0], row[1], row[2]))
+    return [{"symbol": s, "name": n} for _, _, s, n in scored[:limit]]

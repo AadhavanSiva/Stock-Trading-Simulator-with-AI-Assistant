@@ -480,6 +480,12 @@ def buy_lookup():
     try:
         quote = operations.look_up(g.user_id, symbol)
     except ValidationError as exc:
+        # Not a ticker we can price. Before calling it an error, try it as
+        # a company name — "apple" is what someone who does not yet know
+        # the ticker actually types, and that is the person this is for.
+        matches = operations.search_symbols(symbol)
+        if matches:
+            return redirect(url_for("search", q=symbol, **{"for": "buy"}))
         return render_template("buy.html", symbol=symbol, error=str(exc)), 400
 
     return render_template("buy_quantity.html", quote=quote)
@@ -751,6 +757,43 @@ def assistant_page():
     )
 
 
+# --------------------------------------------------------------- search
+
+# Where a chosen result should go next. Keyed rather than taken from the
+# request, so a crafted `for` cannot aim the form at an arbitrary route.
+SEARCH_TARGETS = {
+    "buy": {"action": "buy_lookup", "label": "Buy", "field": "symbol"},
+    "watchlist": {"action": "watchlist_add", "label": "Follow", "field": "symbol"},
+}
+
+
+@app.route("/search")
+@login_required
+def search():
+    """Find a company by name or ticker.
+
+    A plain page behind a GET, so it works with no JavaScript and the
+    results are linkable. The live dropdown in the buy form calls
+    /api/search instead and is an enhancement over this, not a
+    replacement for it.
+    """
+    query = (request.args.get("q") or "").strip()
+    target = SEARCH_TARGETS.get(request.args.get("for"), SEARCH_TARGETS["buy"])
+    results = operations.search_symbols(query) if query else []
+    return render_template("search.html", motion="calm",
+                           query=query, results=results, target=target,
+                           target_key=request.args.get("for", "buy"))
+
+
+@app.route("/api/search")
+@login_required
+def api_search():
+    """JSON for the live dropdown. Reads the cached catalogue, so it costs
+    no market-data request and does not touch the database."""
+    return {"results": operations.search_symbols(
+        request.args.get("q", ""), limit=8)}
+
+
 # --------------------------------------------------------------- lookup
 
 @app.route("/api/quote")
@@ -973,9 +1016,12 @@ def watchlist_view():
 @login_required
 def watchlist_add():
     """Follow a ticker. Reached from the stock page and the watchlist."""
+    typed = request.form.get("symbol")
     try:
-        symbol, added = operations.watch(g.user_id, request.form.get("symbol"))
+        symbol, added = operations.watch(g.user_id, typed)
     except ValidationError as exc:
+        if operations.search_symbols(typed):
+            return redirect(url_for("search", q=typed, **{"for": "watchlist"}))
         flash(str(exc), "error")
         return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
 

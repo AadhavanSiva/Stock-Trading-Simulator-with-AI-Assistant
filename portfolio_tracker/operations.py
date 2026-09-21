@@ -50,6 +50,7 @@ __all__ = [
     "record_value_sample", "performance", "percent_return",
     "leaderboard_standings", "my_standing", "set_leaderboard_participation",
     "watch", "unwatch", "watchlist_rows", "refresh_watchlist",
+    "search_symbols",
 ]
 
 
@@ -971,3 +972,19 @@ def refresh_watchlist(user_id, on_start=None):
             outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
             failed += 1
     return RefreshReport(outcomes, updated, failed, len(outcomes))
+
+
+# ------------------------------------------------------------- searching
+
+def search_symbols(query, limit=8):
+    """Find tradable companies by ticker or name.
+
+    Reads the cached asset catalogue, so it costs no market-data request
+    in the ordinary case and never touches the database. Returns
+    [{"symbol", "name"}, ...], best match first, or [] for a blank query
+    or a catalogue that could not be loaded — search is an aid, and a
+    typed ticker must keep working without it.
+    """
+    if not (query or "").strip():
+        return []
+    return market_data.search_assets(query, limit=limit)

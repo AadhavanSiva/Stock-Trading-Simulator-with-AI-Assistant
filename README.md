@@ -24,6 +24,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
 - A performance chart of account value over time, and a percent return measured against the opening balance
 - Today's change per position and for the account overall, measured from the previous close
+- Search by company name, not just ticker — typing "apple" finds AAPL, and the results show the ticker so you learn it
 - An opt-in leaderboard showing a chosen nickname, account value and return — never a real name, email address, holding, trade or cash balance
 - A watchlist for following tickers without owning them, with today's move on each
 - Terms, privacy policy and a persistent simulation disclaimer — drafts, clearly marked as needing legal review
@@ -58,6 +59,31 @@ point is load-bearing rather than incidental: the bars endpoint answers
 byte-for-byte what it answers for a real symbol with no trading in the
 requested range. The catalogue's `404` is the only unambiguous "no such
 thing" the API offers, so a lookup asks there first.
+
+**Searching by name** uses the same provider's asset catalogue: one
+request for all ~13,500 tradable US equities, held for a day, about 1 MB
+resident after trimming to symbol and name. Searching it costs no further
+requests and never touches the database.
+
+Ranking is the substance of that feature rather than a refinement. A plain
+substring search for "apple" returns Maui Land & Pineapple, Pineapple
+Financial and two leveraged Apple ETFs *before* Apple itself — which, for
+the beginner who does not yet know the ticker, is worse than no search at
+all, because the plausible-looking top hit is a 2x derivative. Matches are
+therefore tiered: exact symbol, then symbol prefix, then names *starting*
+with the term, then names with a *word* starting with it, then anything
+else. "Pineapple" has no word starting with "apple", so it cannot outrank
+Apple. Nothing is filtered by what kind of security it is — the tiers sink
+derivatives on their own, and a hand-written blocklist would be this app
+deciding what you are allowed to find.
+
+Company names are trimmed for display only: trailing listing boilerplate
+("Common Stock", "Ordinary Shares") is removed, while `Class`, `Series`,
+`ETF`, `Warrant` and similar never are, because those distinguish one
+instrument from another — stripping "Class B" would render BRK.A and
+BRK.B identically. Matching runs against the raw name as well, so trimming
+can never hide a company, and results are never merged: two assets that
+trim to the same text stay two rows, told apart by the ticker.
 
 **Limitations you should know about, in order of how much they matter:**
 
