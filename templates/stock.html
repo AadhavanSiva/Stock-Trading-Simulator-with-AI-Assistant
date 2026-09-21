@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set assistant_symbol = symbol %}
 {% from "_delta.html" import delta %}
+{% from "_as_of.html" import as_of %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': symbol}] %}
 {% block title %}{{ symbol }} · {{ quote.company_name }} · Portfolio Tracker{% endblock %}
 
@@ -59,8 +60,8 @@
                     {% if window == 'all' %}
                         <strong>This isn't the full history yet.</strong>
                         Only prices since {{ stored_since | long_date }} are stored,
-                        so the chart below shows that period, not the company's
-                        whole life on the market.
+                        so the chart below shows that period, not everything
+                        available.
                     {% else %}
                         <strong>Part of this range is missing.</strong>
                         Prices are stored only from {{ stored_since | long_date }},
@@ -85,6 +86,19 @@
             <div class="chart-change">
                 {{ delta(chart.change, chart.change_pct) }}
                 <p class="faint" style="margin:var(--s1) 0 0">{{ coverage }}</p>
+                {% if window == 'all' and not partial %}
+                    {# The chart is complete, but "all time" is the data
+                       provider's all-time, not the company's. Saying so is
+                       the same honesty the partial-history notice exists
+                       for — a full load that quietly covers five years
+                       would be the more misleading of the two. #}
+                    <p class="faint" style="margin:var(--s1) 0 0">
+                        Prices are available from
+                        {{ earliest_available | long_date }} onwards, which is as
+                        far back as the market data provider goes — not the
+                        company's whole life on the market.
+                    </p>
+                {% endif %}
             </div>
         </div>
 
@@ -246,6 +260,8 @@
                 <div class="ledger-row"><dt>Your cash would buy</dt><dd>up to {{ quote.affordable | shares }}</dd></div>
             </dl>
         {% endif %}
+        {{ as_of(prices_as_of) }}
+
         <div class="actions">
             <a class="btn btn-primary" href="{{ url_for('buy_start', symbol=symbol) }}">Buy {{ symbol }}</a>
             {% if quote.owned is not none %}

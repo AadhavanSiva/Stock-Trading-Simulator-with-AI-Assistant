@@ -24,6 +24,8 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
 - A performance chart of account value over time, and a percent return measured against the opening balance
 - Today's change per position and for the account overall, measured from the previous close
+- Prices refresh themselves in the background when a page needs them and the market is open — no button to remember, and no page ever waits on the network
+- Search by company name, not just ticker — typing "apple" finds AAPL, and the results show the ticker so you learn it
 - An opt-in leaderboard showing a chosen nickname, account value and return — never a real name, email address, holding, trade or cash balance
 - A watchlist for following tickers without owning them, with today's move on each
 - Terms, privacy policy and a persistent simulation disclaimer — drafts, clearly marked as needing legal review
@@ -58,6 +60,52 @@ point is load-bearing rather than incidental: the bars endpoint answers
 byte-for-byte what it answers for a real symbol with no trading in the
 requested range. The catalogue's `404` is the only unambiguous "no such
 thing" the API offers, so a lookup asks there first.
+
+**Searching by name** uses the same provider's asset catalogue: one
+request for all ~13,500 tradable US equities, held for a day, about 1 MB
+resident after trimming to symbol and name. Searching it costs no further
+requests and never touches the database.
+
+Ranking is the substance of that feature rather than a refinement. A plain
+substring search for "apple" returns Maui Land & Pineapple, Pineapple
+Financial and two leveraged Apple ETFs *before* Apple itself — which, for
+the beginner who does not yet know the ticker, is worse than no search at
+all, because the plausible-looking top hit is a 2x derivative. Matches are
+therefore tiered: exact symbol, then symbol prefix, then names *starting*
+with the term, then names with a *word* starting with it, then anything
+else. "Pineapple" has no word starting with "apple", so it cannot outrank
+Apple. Nothing is filtered by what kind of security it is — the tiers sink
+derivatives on their own, and a hand-written blocklist would be this app
+deciding what you are allowed to find.
+
+Company names are trimmed for display only: trailing listing boilerplate
+("Common Stock", "Ordinary Shares") is removed, while `Class`, `Series`,
+`ETF`, `Warrant` and similar never are, because those distinguish one
+instrument from another — stripping "Class B" would render BRK.A and
+BRK.B identically. Matching runs against the raw name as well, so trimming
+can never hide a company, and results are never merged: two assets that
+trim to the same text stay two rows, told apart by the ticker.
+
+**Prices refresh themselves.** A page that shows prices checks
+`stocks.updated_at`; if the oldest is over five minutes old *and* Alpaca's
+clock says the market is trading, the work goes to a background thread and
+the page renders immediately from what is stored. Every such page carries
+a "prices as of ..." line, because a figure that is quietly stale is worse
+than one that is visibly stale. The manual refresh is still there.
+
+Five minutes rather than one: the free plan's REST data is delayed by
+about fifteen, so a shorter floor would repaint identical numbers and
+spend the request budget proving nothing had changed. Market hours come
+from `/v2/clock` rather than a calendar in this repository, so holidays
+and half-days are right without anyone maintaining a table; an unreachable
+clock counts as closed, which holds the refresh off rather than quoting
+into the night on a guess.
+
+A module-level claim set means ten simultaneous viewers of one holding
+cause one refresh. **That set, and the quote cache, are per process** —
+fine at the single worker `render.yaml` starts, and the thing to move into
+the database before adding a second. The code says so at the claim set,
+with `stocks.updated_at` named as the column to coordinate on.
 
 **Limitations you should know about, in order of how much they matter:**
 
@@ -397,7 +445,7 @@ the service, so Render needs no hand-entered build settings.
 
 What the Blueprint sets and why:
 
-- **Python 3.10.4**, as in CI. `pandas==2.0.3` has no wheels for 3.12+.
+- **Python 3.10.4**, as in CI. Nothing pins the app to 3.10 any more — `pandas` did, and it is gone — but local, CI and production all naming one version is what makes a green CI run mean anything about production.
 - **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
   HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
   `ProxyFix`) to build `https://` links, and marks the session cookie
@@ -538,6 +586,9 @@ deliberate:
 - **Deleting an account really deletes it.** One transaction removes the user row, and `ON DELETE CASCADE` takes the positions, the trade history and the rate-limit rows with it — so a table added later is covered by the schema rather than by somebody remembering to extend a list of `DELETE` statements. A test walks `information_schema` to assert that *nothing* referencing `users` keeps a row. Shared market data is deliberately left alone: prices belong to everyone.
 - **Deletion needs a typed word, not a click.** The form requires the word `DELETE`, and `operations.delete_account` re-checks it, so the guard does not live only in a template that a second front end might not render. Deleting is a `POST` with a CSRF token, and a `GET` cannot do it.
 - **The data export is a download, never cached.** It carries `Cache-Control: no-store`, and money is exported as strings rather than floats so a cost basis of `164.20` survives the round trip exactly.
+- **Browser-level headers are set on every response.** `Content-Security-Policy` (scripts from this origin only — no `unsafe-inline`, which is the half that stops an injected payload; inline *styles* are allowed because the charts position points as percentages in style attributes), `X-Frame-Options: DENY` and `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy`. `Strict-Transport-Security` is sent only behind an HTTPS proxy — setting it on plain local http would pin a developer's browser to https for `127.0.0.1` across every project on their machine.
+- **The session cookie states `SameSite=Lax`** rather than inheriting it. Every current browser defaults an unset value to Lax, but "every current browser" is a moving claim and older ones default to the permissive direction. `Lax` rather than `Strict` because Google returns a signed-in user by a top-level GET, which `Strict` would drop — sign-in would break silently.
+- **`/healthz` says what is actually deployed.** Public, no database, no market data, no session: it has to answer while the database is asleep. It reports the commit SHA, whether market data and the assistant are configured, and nothing secret. It exists because every page that differs between releases sits behind sign-in, so a deploy could previously fail to happen with no way to tell from outside.
 - **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
 
 ## Tests

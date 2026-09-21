@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_delta.html" import delta %}
+{% from "_as_of.html" import as_of %}
 {% set active = 'watchlist' %}
 {% block title %}Watchlist · Portfolio Tracker{% endblock %}
 
@@ -25,9 +26,10 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="next" value="{{ url_for('watchlist_view') }}">
         <div class="field" style="margin-bottom:0">
-            <label class="visually-hidden" for="symbol">Ticker symbol</label>
-            <input type="text" id="symbol" name="symbol" class="ticker-input"
-                   placeholder="AAPL" autocomplete="off" required>
+            <label class="visually-hidden" for="symbol">Company or ticker</label>
+            <input type="text" id="symbol" name="symbol"
+                   placeholder="Apple, or AAPL" autocomplete="off"
+                   spellcheck="false" required>
         </div>
         <button type="submit" class="btn btn-secondary">Follow</button>
     </form>
@@ -106,6 +108,8 @@
             </table>
         </div>
     </div>
+
+    {{ as_of(prices_as_of) }}
 
     <div class="glossary reveal">
         <h3>In plain words</h3>

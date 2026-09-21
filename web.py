@@ -10,6 +10,7 @@ Run it with:  python -m flask --app web run
 """
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -24,7 +25,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
 from portfolio_tracker.models import history, portfolio, stocks, users, watchlist
-from portfolio_tracker.services import assistant
+from portfolio_tracker.services import assistant, market_data
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,13 @@ csrf = CSRFProtect(app)
 if config.BEHIND_HTTPS_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.config["SESSION_COOKIE_SECURE"] = True
+
+# Stated rather than left to the browser. Every current browser defaults an
+# unset SameSite to Lax, but "every current browser" is a moving claim and
+# an older one defaults to None, which is the permissive direction. Lax
+# still allows the top-level GET that Google's OAuth callback arrives as.
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 oauth = OAuth(app)
 if config.google_configured():
@@ -86,6 +94,68 @@ def login_required(view):
     return wrapped
 
 
+@app.after_request
+def security_headers(response):
+    """Headers the app cannot set from a template.
+
+    None of these replace anything already done — CSRF tokens, the Secure
+    cookie, escaping — they close the gaps a browser can only be told
+    about in a header.
+
+    The CSP is deliberately strict about where code may come from and
+    deliberately permissive about inline style: the charts compute
+    positions as percentages and set them as style attributes, so
+    'unsafe-inline' for styles is load-bearing rather than laziness.
+    Scripts have no such allowance, which is the half that matters.
+    """
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Only meaningful over HTTPS, and actively harmful to set when a
+    # developer is on plain http at 127.0.0.1 — it would pin their browser
+    # to https for localhost across every project.
+    if config.BEHIND_HTTPS_PROXY:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("Content-Security-Policy", "; ".join([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        # The Ask panel renders Google's search-suggestion HTML inside a
+        # sandboxed iframe served from a srcdoc, which is an opaque origin.
+        "frame-src 'self'",
+        "connect-src 'self'",
+        "form-action 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+    ]))
+    return response
+
+
+@app.route("/healthz")
+def healthz():
+    """What is actually running here.
+
+    Public and deliberately cheap: no database, no market data, no
+    session. It exists because there was previously no way to tell which
+    commit a deploy was serving — every page that differs between releases
+    is behind sign-in, so a deploy could silently not have happened.
+
+    Render exposes the commit as RENDER_GIT_COMMIT; locally there is none,
+    and "unknown" is the honest answer rather than a fabricated one.
+    """
+    return {
+        "status": "ok",
+        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
+        "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+        "behind_proxy": config.BEHIND_HTTPS_PROXY,
+        "market_data_configured": config.alpaca_configured(),
+        "assistant_configured": assistant.research_available(),
+    }
+
+
 @app.context_processor
 def inject_user():
     """Make the signed-in account available to every template."""
@@ -107,6 +177,25 @@ def inject_user():
         "assistant_enabled": config.ASSISTANT_ENABLED,
         "assistant_research": assistant.research_available(),
     }
+
+
+def freshen(symbols):
+    """Trigger a background refresh if needed, and say how old prices are.
+
+    Returns the timestamp to show the reader. Never blocks: the refresh it
+    may start will not have finished by the time this page renders, and
+    that is deliberate — the page shows what is stored, stamped with when
+    it was stored.
+    """
+    symbols = list(symbols)
+    if not symbols:
+        return None
+    try:
+        operations.ensure_prices_fresh(g.user_id, symbols)
+    except Exception:
+        # A refresh that cannot even be started must not cost a page view.
+        log.warning("Could not start a background price refresh", exc_info=True)
+    return operations.prices_as_of(symbols)
 
 
 def safe_next(target):
@@ -379,6 +468,7 @@ def index():
         "portfolio.html",
         motion="calm",
         summary=summary,
+        prices_as_of=freshen(row["symbol"] for row in summary.rows),
         performance=operations.performance(g.user_id),
         total_return=operations.percent_return(g.user_id, summary=summary),
         # Names the position just traded, so its row settles in rather than
@@ -391,7 +481,9 @@ def index():
 @app.route("/balance")
 @login_required
 def balance():
-    return render_template("balance.html", summary=operations.account_summary(g.user_id))
+    summary = operations.account_summary(g.user_id)
+    return render_template("balance.html", summary=summary,
+                           prices_as_of=freshen(row["symbol"] for row in summary.rows))
 
 
 # -------------------------------------------------------------------- buy
@@ -410,6 +502,12 @@ def buy_lookup():
     try:
         quote = operations.look_up(g.user_id, symbol)
     except ValidationError as exc:
+        # Not a ticker we can price. Before calling it an error, try it as
+        # a company name — "apple" is what someone who does not yet know
+        # the ticker actually types, and that is the person this is for.
+        matches = operations.search_symbols(symbol)
+        if matches:
+            return redirect(url_for("search", q=symbol, **{"for": "buy"}))
         return render_template("buy.html", symbol=symbol, error=str(exc)), 400
 
     return render_template("buy_quantity.html", quote=quote)
@@ -522,6 +620,9 @@ def stock_detail(symbol):
         symbol=symbol,
         quote=quote,
         watching=watchlist.contains(g.user_id, symbol),
+        prices_as_of=freshen([symbol]),
+        # "All time" means the provider's history, not the company's life.
+        earliest_available=market_data.EARLIEST_AVAILABLE,
         chart=chart,
         readouts=charts.readouts(chart),
         window=window,
@@ -677,6 +778,43 @@ def assistant_page():
         answer=answer,
         max_chars=assistant.MAX_QUESTION_CHARS,
     )
+
+
+# --------------------------------------------------------------- search
+
+# Where a chosen result should go next. Keyed rather than taken from the
+# request, so a crafted `for` cannot aim the form at an arbitrary route.
+SEARCH_TARGETS = {
+    "buy": {"action": "buy_lookup", "label": "Buy", "field": "symbol"},
+    "watchlist": {"action": "watchlist_add", "label": "Follow", "field": "symbol"},
+}
+
+
+@app.route("/search")
+@login_required
+def search():
+    """Find a company by name or ticker.
+
+    A plain page behind a GET, so it works with no JavaScript and the
+    results are linkable. The live dropdown in the buy form calls
+    /api/search instead and is an enhancement over this, not a
+    replacement for it.
+    """
+    query = (request.args.get("q") or "").strip()
+    target = SEARCH_TARGETS.get(request.args.get("for"), SEARCH_TARGETS["buy"])
+    results = operations.search_symbols(query) if query else []
+    return render_template("search.html", motion="calm",
+                           query=query, results=results, target=target,
+                           target_key=request.args.get("for", "buy"))
+
+
+@app.route("/api/search")
+@login_required
+def api_search():
+    """JSON for the live dropdown. Reads the cached catalogue, so it costs
+    no market-data request and does not touch the database."""
+    return {"results": operations.search_symbols(
+        request.args.get("q", ""), limit=8)}
 
 
 # --------------------------------------------------------------- lookup
@@ -890,10 +1028,12 @@ def disclaimer():
 @app.route("/watchlist")
 @login_required
 def watchlist_view():
+    rows = operations.watchlist_rows(g.user_id)
     return render_template(
         "watchlist.html",
         motion="calm",
-        rows=operations.watchlist_rows(g.user_id),
+        rows=rows,
+        prices_as_of=freshen(row.symbol for row in rows),
     )
 
 
@@ -901,9 +1041,12 @@ def watchlist_view():
 @login_required
 def watchlist_add():
     """Follow a ticker. Reached from the stock page and the watchlist."""
+    typed = request.form.get("symbol")
     try:
-        symbol, added = operations.watch(g.user_id, request.form.get("symbol"))
+        symbol, added = operations.watch(g.user_id, typed)
     except ValidationError as exc:
+        if operations.search_symbols(typed):
+            return redirect(url_for("search", q=typed, **{"for": "watchlist"}))
         flash(str(exc), "error")
         return redirect(safe_next(request.form.get("next")) or url_for("watchlist_view"))
 

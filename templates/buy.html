@@ -24,16 +24,26 @@
     <form method="post" action="{{ url_for('buy_lookup') }}" data-busy-label="Looking up…">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
-            <label for="symbol">Ticker symbol</label>
+            <label for="symbol">Company or ticker</label>
             <p class="hint" id="symbol-hint">
-                The short code a company trades under — Apple is AAPL,
-                Microsoft is MSFT.
+                Type a company's name or its ticker — the short code it
+                trades under. Searching <strong>Apple</strong> finds AAPL;
+                if you already know the ticker, type that instead.
             </p>
-            <input type="text" id="symbol" name="symbol" class="ticker-input"
-                   value="{{ symbol or '' }}" placeholder="AAPL"
-                   autocomplete="off" autocapitalize="characters" spellcheck="false"
+            {# Not .ticker-input any more: that upper-cases and letter-spaces
+               the text, which is right for AAPL and wrong for "berkshire".
+               autocapitalize is off for the same reason. #}
+            <input type="text" id="symbol" name="symbol"
+                   value="{{ symbol or '' }}" placeholder="Apple, or AAPL"
+                   autocomplete="off" spellcheck="false"
                    aria-describedby="symbol-hint symbol-status"
-                   data-lookup required autofocus>
+                   aria-autocomplete="list" aria-expanded="false"
+                   role="combobox" aria-controls="symbol-results"
+                   data-lookup data-search required autofocus>
+            {# Populated by app.js. Empty and inert without JavaScript, and
+               the form still submits to the search page in that case. #}
+            <ul class="search-results" id="symbol-results" role="listbox"
+                data-search-results hidden></ul>
             {# Filled in as they type, so a typo shows before they commit.
                Reserves its own line so nothing below it jumps. #}
             <p class="field-status" id="symbol-status" data-lookup-status
@@ -41,7 +51,7 @@
         </div>
 
         <div class="actions">
-            <button type="submit" class="btn btn-primary">Look up price</button>
+            <button type="submit" class="btn btn-primary">Look up</button>
             <a class="btn btn-quiet" href="{{ url_for('index') }}">Cancel</a>
         </div>
     </form>

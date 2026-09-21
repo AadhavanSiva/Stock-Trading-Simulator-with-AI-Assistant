@@ -10,11 +10,14 @@ Every operation takes an explicit `user_id`. Resolving *which* account
 that is belongs to the front end: the web app reads it from the session,
 the CLI from PORTFOLIO_USER in .env.
 
-No SQL and no yfinance calls live here — those stay in models/ and
+No SQL and no market-data calls live here — those stay in models/ and
 services/ respectively.
 """
 import logging
+import os
+import threading
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
@@ -50,6 +53,7 @@ __all__ = [
     "record_value_sample", "performance", "percent_return",
     "leaderboard_standings", "my_standing", "set_leaderboard_participation",
     "watch", "unwatch", "watchlist_rows", "refresh_watchlist",
+    "search_symbols", "ensure_prices_fresh", "prices_as_of",
 ]
 
 
@@ -971,3 +975,137 @@ def refresh_watchlist(user_id, on_start=None):
             outcomes.append(SymbolOutcome(symbol, False, _job_failure(symbol, exc)))
             failed += 1
     return RefreshReport(outcomes, updated, failed, len(outcomes))
+
+
+# ------------------------------------------------------------- searching
+
+def search_symbols(query, limit=8):
+    """Find tradable companies by ticker or name.
+
+    Reads the cached asset catalogue, so it costs no market-data request
+    in the ordinary case and never touches the database. Returns
+    [{"symbol", "name"}, ...], best match first, or [] for a blank query
+    or a catalogue that could not be loaded — search is an aid, and a
+    typed ticker must keep working without it.
+    """
+    if not (query or "").strip():
+        return []
+    return market_data.search_assets(query, limit=limit)
+
+
+# ------------------------------------------------- automatic refreshing
+
+# How old a stored price may be before a page view triggers a refresh.
+#
+# Five minutes, not one. The free market-data plan is delayed by roughly
+# fifteen, so a one-minute floor would repaint identical numbers fourteen
+# times out of fifteen and spend the request budget proving the data had
+# not changed. Five minutes is honest about what the feed can actually
+# tell us, and nothing a reader sees is ever more than that out of step
+# with what we could have known.
+STALE_AFTER_SECONDS = float(os.getenv("PRICE_STALE_AFTER_SECONDS", "300"))
+
+# Two threads. The work is one HTTP request per symbol and the point is
+# never to make a page wait, not to refresh quickly; more threads would
+# mostly be a way to spend the rate limit faster.
+_refresh_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="price-refresh")
+
+# Symbols with a refresh in flight.
+#
+# ---------------------------------------------------------------------
+# THIS IS PER PROCESS, AND SO IS THE QUOTE CACHE IN services/market_data.
+#
+# At one worker — which is what render.yaml starts, deliberately — that
+# is the whole story: ten simultaneous viewers of the same holding cause
+# one refresh, because the second through tenth find the symbol already
+# claimed here.
+#
+# A second worker would break both halves of that. Each process keeps its
+# own claim set, so the same symbol can be refreshed once per worker,
+# doubling market-data traffic; and each keeps its own quote cache, so two
+# people can be served prices minutes apart with nothing on either page
+# explaining the difference.
+#
+# If you are adding workers, this set is what has to move into the
+# database first. `stocks.updated_at` is the column to coordinate on —
+# claim a symbol with SELECT ... FOR UPDATE SKIP LOCKED so exactly one
+# worker refreshes it — and the quote cache has to go or be accepted as
+# per-process. Do that before scaling, not after the first report of two
+# browsers disagreeing about a price.
+# ---------------------------------------------------------------------
+_refreshing = set()
+_refreshing_lock = threading.Lock()
+
+
+def _claim(symbols):
+    """Take the symbols nobody else is already refreshing."""
+    with _refreshing_lock:
+        claimed = [s for s in symbols if s not in _refreshing]
+        _refreshing.update(claimed)
+    return claimed
+
+
+def _release(symbols):
+    with _refreshing_lock:
+        _refreshing.difference_update(symbols)
+
+
+def _refresh_in_background(user_id, symbols):
+    """Re-quote symbols, then sample the account. Runs off the request."""
+    try:
+        for symbol in symbols:
+            try:
+                price, _, previous_close = market_data.get_quote(symbol, fresh=True)
+                if price is not None:
+                    stocks.update_stock_price(symbol, price,
+                                              previous_close=previous_close)
+            except Exception:
+                # One bad symbol must not cost the others, and nothing here
+                # has anyone waiting on it — the page was served already.
+                log.warning("Background refresh failed for %s", symbol, exc_info=True)
+        try:
+            record_value_sample(user_id)
+        except Exception:
+            log.warning("Background value sample failed for account %s",
+                        user_id, exc_info=True)
+    finally:
+        _release(symbols)
+
+
+def ensure_prices_fresh(user_id, symbols):
+    """Start a background refresh if these prices are stale. Never waits.
+
+    Returns the symbols actually handed to a refresh, which is mostly of
+    interest to tests — a caller rendering a page should ignore it and
+    draw whatever is stored, because the refresh will not have finished.
+    That is the point: a stale price with a visible timestamp beats a page
+    that hangs on somebody else's network.
+    """
+    symbols = sorted({(s or "").upper() for s in symbols if s})
+    if not symbols:
+        return []
+
+    stale = stocks.stale_symbols(symbols, STALE_AFTER_SECONDS)
+    if not stale:
+        return []
+
+    # Checked only once something is actually stale, so a closed market
+    # costs no clock request on a page whose prices are current anyway.
+    if not market_data.market_is_open():
+        return []
+
+    claimed = _claim(stale)
+    if not claimed:
+        return []
+
+    try:
+        _refresh_pool.submit(_refresh_in_background, user_id, claimed)
+    except Exception:
+        _release(claimed)
+        raise
+    return claimed
+
+
+def prices_as_of(symbols):
+    """When the oldest of these prices was fetched, or None."""
+    return stocks.prices_as_of(symbols)

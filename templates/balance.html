@@ -4,6 +4,7 @@
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': 'Balance'}] %}
 {% block title %}Balance · Portfolio Tracker{% endblock %}
 
+{% from "_as_of.html" import as_of %}
 {% block content %}
 <div class="page-head">
     <p class="label">Where your money is</p>
@@ -120,4 +121,5 @@
         </div>
     </dl>
 </div>
+{{ as_of(prices_as_of) }}
 {% endblock %}

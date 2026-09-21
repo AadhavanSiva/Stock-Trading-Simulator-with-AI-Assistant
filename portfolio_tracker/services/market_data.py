@@ -22,10 +22,11 @@ there is nothing to parse into a frame and no reason for a caller to need
 pandas to read one.
 """
 import logging
+import re
 import threading
 import time
 from collections import namedtuple
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import requests
@@ -222,11 +223,17 @@ def _request(url, params=None, timeout=None, symbol=None, allow_404=False):
 # --------------------------------------------------------- the catalogue
 
 def clear_quote_cache():
-    """Forget every cached quote and asset. Used between tests."""
+    """Forget every cached quote, asset and the search catalogue."""
     with _quotes_lock:
         _quotes.clear()
     with _assets_lock:
         _assets.clear()
+    with _catalogue_lock:
+        _catalogue["assets"] = []
+        _catalogue["expires"] = 0.0
+    with _clock_lock:
+        _clock["is_open"] = None
+        _clock["expires"] = 0.0
 
 
 def resolve_symbol(symbol, fresh=False):
@@ -415,12 +422,42 @@ TIMEFRAMES = {
 _MAX_PAGES = 20
 
 
-def _start_for(period):
+# How far back a *session-based* range has to reach to be sure of catching
+# the last one that traded.
+#
+# This is the fetch-side half of a constraint the read side already
+# documents: see history.get_intraday_sessions, which says "1 day" has to
+# mean the latest trading session, not the last 24 hours, because a
+# wall-clock window returns nothing all weekend, on holidays, and before
+# the open. That fix was applied to the query that *reads* stored bars —
+# but if the fetch window is wall-clock, there is nothing stored to read,
+# and the chart is empty for exactly the same reason.
+#
+# So the fetch deliberately over-reaches and lets the session SQL pick the
+# day. Seven days clears a normal weekend and a Monday or Friday holiday;
+# fourteen clears the longest stretch the US market closes for. Costs one
+# request either way, and price_intraday is UNIQUE (symbol, ts), so the
+# extra days are discarded on insert rather than duplicated.
+INTRADAY_LOOKBACK_DAYS = {"1d": 7, "5d": 14}
+
+# The earliest bar Alpaca serves on the free IEX feed, measured rather than
+# assumed: a "max" request for AAPL returns nothing before 2020-07-27.
+# Worth stating because "All time" on a chart means *this*, not the
+# company's life on the market, and the UI has to say so.
+EARLIEST_AVAILABLE = date(2020, 7, 27)
+
+
+def _start_for(period, intraday=False):
+    if intraday:
+        days = INTRADAY_LOOKBACK_DAYS.get(period)
+        if days is not None:
+            return datetime.now(timezone.utc) - timedelta(days=days)
+
     days = PERIODS.get(period, PERIODS["6mo"])
     if days is None:
-        # Alpaca's equity history starts in 2016. Asking for earlier is
-        # accepted and simply returns nothing before then.
-        return datetime(2015, 1, 1, tzinfo=timezone.utc)
+        # Before the provider's own history, so "max" means everything
+        # there is rather than a window we picked.
+        return datetime(EARLIEST_AVAILABLE.year, 1, 1, tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
@@ -449,9 +486,11 @@ def _bars(symbol, timeframe, start, timeout):
 
         # `bars` is null, not an empty object, when there is nothing.
         rows = (payload.get("bars") or {}).get(symbol) or []
+        unreadable = 0
         for row in rows:
             ts = _timestamp(row.get("t"))
             if ts is None:
+                unreadable += 1
                 continue
             collected.append(Bar(
                 ts=ts,
@@ -461,6 +500,23 @@ def _bars(symbol, timeframe, start, timeout):
                 close=_to_decimal(row.get("c")),
                 volume=int(row["v"]) if row.get("v") is not None else None,
             ))
+
+        # Bars arrived but not one of them could be read. That is a
+        # parsing failure — a changed timestamp format, most likely — and
+        # it must not leave by the same door as "this range had no
+        # trading". Dropping them silently would report "0 new days"
+        # during a total outage of our own making, which is precisely the
+        # failure this module was hardened against when it used yfinance.
+        if rows and unreadable == len(rows):
+            log.error(
+                "Alpaca returned %s %s bars for %s and none could be parsed; "
+                "the timestamp format may have changed. First: %r",
+                len(rows), timeframe, symbol, rows[0].get("t"),
+            )
+            raise MarketDataUnavailable(symbol)
+        if unreadable:
+            log.warning("Skipped %s unreadable %s bars for %s of %s",
+                        unreadable, timeframe, symbol, len(rows))
 
         page_token = payload.get("next_page_token")
         if not page_token:
@@ -472,7 +528,7 @@ def _bars(symbol, timeframe, start, timeout):
     return collected
 
 
-def _history(symbol, timeframe, period, timeout):
+def _history(symbol, timeframe, period, timeout, intraday=False):
     """Bars, telling "Alpaca is down" apart from "no prices".
 
     Anything that is not a clean answer — a timeout, rejected credentials,
@@ -485,7 +541,7 @@ def _history(symbol, timeframe, period, timeout):
         log.info("Alpaca does not list the symbol %s", symbol)
         raise UnknownSymbol(symbol)
 
-    bars = _bars(symbol, timeframe, _start_for(period), timeout)
+    bars = _bars(symbol, timeframe, _start_for(period, intraday=intraday), timeout)
     if not bars:
         log.info("Alpaca has no %s bars for %s over %s", timeframe, symbol, period)
     return bars
@@ -499,11 +555,200 @@ def get_price_history(symbol, period="6mo"):
 def get_intraday(symbol, period="1d", interval="5m"):
     """Intraday bars for the short-range charts.
 
-    Alpaca serves intraday history well beyond what these charts ask for,
-    so unlike Yahoo there is no per-interval reach to work around. The
-    callers still pass the period the chart needs rather than everything
-    available, because the rows are stored and a wider net is only more to
-    write and throw away.
+    `period` names a number of *trading sessions*, not a span of hours,
+    and the window fetched is deliberately wider than it — see
+    INTRADAY_LOOKBACK_DAYS. Asking for literally the last 24 hours returns
+    nothing from Friday evening until Monday's open.
     """
     timeframe = TIMEFRAMES.get(interval, "5Min")
-    return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT)
+    return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT,
+                    intraday=True)
+
+
+# ------------------------------------------------------------ market hours
+
+# The clock is asked of Alpaca rather than worked out from a calendar
+# here. Holidays move, half-days exist, and a hand-maintained table is
+# wrong every Thanksgiving; this is one cheap request that is right.
+_CLOCK_SECONDS = 180
+_clock = {"expires": 0.0, "is_open": None}
+_clock_lock = threading.Lock()
+
+
+def market_is_open():
+    """True when Alpaca says the US market is trading right now.
+
+    Returns False when the clock cannot be reached. That is deliberate and
+    the conservative direction: an unknown clock means the automatic
+    refresh holds off rather than quoting into the night on a guess. The
+    manual refresh is unaffected, so nobody is ever stuck — and the miss
+    is logged, because a permanently unreachable clock would otherwise
+    stop automatic refreshes silently.
+    """
+    with _clock_lock:
+        if _clock["expires"] > time.monotonic() and _clock["is_open"] is not None:
+            return _clock["is_open"]
+
+    try:
+        payload = _request(f"{config.ALPACA_TRADING_URL}/v2/clock",
+                           timeout=config.MARKET_QUOTE_TIMEOUT,
+                           symbol="clock") or {}
+    except MarketDataUnavailable:
+        log.warning("Could not read the market clock; treating the market as "
+                    "closed so the automatic refresh holds off")
+        return False
+
+    is_open = bool(payload.get("is_open"))
+    with _clock_lock:
+        _clock["is_open"] = is_open
+        _clock["expires"] = time.monotonic() + _CLOCK_SECONDS
+    return is_open
+
+
+# ------------------------------------------------------------- the search
+
+# The whole tradable catalogue, for searching by company name. Fetched in
+# one request and held for a day, like the per-symbol entries above and
+# for the same reason: a listing changes with corporate actions, not with
+# the minute.
+#
+# Note this is a *different* cache from _assets. That one is filled lazily,
+# one symbol at a time, by lookups that already know the ticker — it can
+# never answer "what is Apple's symbol", because a symbol nobody has
+# looked up yet is not in it.
+_CATALOGUE_SECONDS = 24 * 60 * 60
+_catalogue = {"expires": 0.0, "assets": []}
+_catalogue_lock = threading.Lock()
+
+# Trailing words that describe how a security is listed rather than what
+# it is. Stripped for display only.
+#
+# What is deliberately NOT here matters more: Class, Series, ETF, Fund,
+# Trust, Warrant, Right and Unit all distinguish one instrument from
+# another. Stripping "Class B" would render BRK.A and BRK.B identically,
+# which is the one outcome this feature must not produce.
+_LISTING_SUFFIXES = (
+    "common stock", "common shares", "ordinary shares",
+    "american depositary shares", "american depositary receipt",
+)
+
+
+def display_name(name):
+    """A company name with listing boilerplate trimmed off the end.
+
+    Display only. Matching always runs against the raw name as well, so
+    trimming can never make a company unfindable, and nothing is ever
+    merged: two assets that trim to the same text remain two results,
+    told apart by the symbol, which is always shown.
+    """
+    if not name:
+        return name
+    trimmed = name.strip()
+    lowered = trimmed.lower()
+    for suffix in _LISTING_SUFFIXES:
+        if lowered.endswith(suffix) and len(trimmed) > len(suffix) + 1:
+            return trimmed[: -len(suffix)].strip(" -,")
+    return trimmed
+
+
+def catalogue(fresh=False):
+    """Every tradable US equity Alpaca lists: [{symbol, name}, ...]."""
+    if not fresh:
+        with _catalogue_lock:
+            if _catalogue["expires"] > time.monotonic() and _catalogue["assets"]:
+                return _catalogue["assets"]
+
+    rows = _request(
+        f"{config.ALPACA_TRADING_URL}/v2/assets",
+        params={"status": "active", "asset_class": "us_equity"},
+        timeout=config.MARKET_HISTORY_TIMEOUT,
+        symbol="catalogue",
+    ) or []
+
+    # Only what the search needs. The full payload is ~6 MB; this is ~1 MB,
+    # and the rest would be held for a day for nothing.
+    assets = [
+        {"symbol": row["symbol"], "name": row.get("name") or row["symbol"]}
+        for row in rows
+        if row.get("tradable") and row.get("symbol")
+    ]
+    with _catalogue_lock:
+        _catalogue["assets"] = assets
+        _catalogue["expires"] = time.monotonic() + _CATALOGUE_SECONDS
+    log.info("Loaded %s tradable assets into the search catalogue", len(assets))
+    return assets
+
+
+def _word_starts(haystack, needle):
+    """True when some word in `haystack` begins with `needle`."""
+    for part in re.split(r"[^a-z0-9]+", haystack):
+        if part.startswith(needle):
+            return True
+    return False
+
+
+def search_assets(query, limit=8):
+    """Find tradable assets by ticker or company name, best match first.
+
+    Ranking is the substance of this, not a refinement. A plain substring
+    search for "apple" returns Maui Land & Pineapple, Pineapple Financial
+    and two leveraged Apple ETFs before Apple itself — which for someone
+    who does not yet know that Apple is AAPL is worse than no search,
+    because the plausible-looking answer is a 2x derivative.
+
+    So matches are tiered, and only sorted within a tier:
+
+        0  the symbol, exactly
+        1  the symbol starts with it
+        2  the name starts with it          <- "Apple Inc." for "apple"
+        3  some word in the name starts with it
+        4  it appears anywhere in the name
+
+    "Pineapple" has no word starting with "apple", so it can only reach
+    tier 4. Nothing is filtered or penalised by what kind of security it
+    is: the tiers sink derivative products on their own, and a hand-made
+    blocklist would be this app deciding what you are allowed to find.
+    """
+    needle = (query or "").strip().lower()
+    if len(needle) < 1:
+        return []
+
+    try:
+        assets = catalogue()
+    except MarketDataUnavailable:
+        # Search is an aid, not the mechanism: a typed ticker still works.
+        log.warning("Asset catalogue unavailable; search returning nothing")
+        return []
+
+    scored = []
+    for asset in assets:
+        symbol = asset["symbol"]
+        symbol_lower = symbol.lower()
+        raw = asset["name"]
+        shown = display_name(raw)
+        # Matched against both, so trimming for display can never hide a
+        # company whose boilerplate the reader actually typed.
+        hay = f"{raw}\n{shown}".lower()
+
+        if symbol_lower == needle:
+            tier = 0
+        elif symbol_lower.startswith(needle):
+            tier = 1
+        elif hay.startswith(needle) or shown.lower().startswith(needle):
+            tier = 2
+        elif _word_starts(hay, needle):
+            tier = 3
+        elif needle in hay or needle in symbol_lower:
+            tier = 4
+        else:
+            continue
+
+        # Within a tier, the shorter name is the plainer one: "Apple Inc."
+        # before "Apple Hospitality REIT", "Vanguard S&P 500 ETF" before
+        # "Vanguard S&P Mid-Cap 400 Growth ETF".
+        scored.append((tier, len(shown), symbol, shown))
+        if tier == 0 and len(scored) > limit * 4:
+            break
+
+    scored.sort(key=lambda row: (row[0], row[1], row[2]))
+    return [{"symbol": s, "name": n} for _, _, s, n in scored[:limit]]

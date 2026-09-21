@@ -132,6 +132,17 @@ def no_real_market_data(monkeypatch):
 
     monkeypatch.setattr(market_data._session, "get", _no_real_market_data)
 
+    # The market is closed unless a test says otherwise. Page views now
+    # consult the clock when a price looks stale, and a test about
+    # rendering should not have to know that — nor accidentally depend on
+    # whether the suite happens to run during trading hours, which would
+    # make the whole suite pass or fail by time of day.
+    # Kept reachable so the two tests that are *about* the clock can still
+    # exercise the real thing through this stub.
+    if not hasattr(market_data, "_real_market_is_open"):
+        market_data._real_market_is_open = market_data.market_is_open
+    monkeypatch.setattr(market_data, "market_is_open", lambda: False)
+
 
 @pytest.fixture(autouse=True)
 def empty_quote_cache():

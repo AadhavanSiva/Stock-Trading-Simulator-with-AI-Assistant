@@ -1244,3 +1244,32 @@ tr.is-you > td:first-child { box-shadow: inset 3px 0 0 var(--color-brand); }
 .legal li { margin-bottom: var(--s2); }
 .legal .updated { color: var(--color-text-3); font-size: .875rem; }
 .gate-terms { margin: var(--s4) 0 0; font-size: .8125rem; line-height: 1.5; }
+
+/* ------------------------------------------------------------ search --- */
+
+/* The live result list. Absent entirely without JavaScript — the form
+   falls back to the search page, which is a real page with real rows. */
+.search-results {
+    list-style: none; margin: var(--s2) 0 0; padding: 0;
+    border: 1px solid var(--border-divider);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
+    max-height: 17rem; overflow-y: auto;
+}
+.search-results li { border-top: 1px solid var(--border-divider); }
+.search-results li:first-child { border-top: 0; }
+.search-results button {
+    display: flex; width: 100%; gap: var(--s3); align-items: baseline;
+    padding: var(--s2) var(--s3);
+    background: none; border: 0; text-align: left; font: inherit;
+    color: var(--color-text); cursor: pointer;
+}
+.search-results button:hover,
+.search-results li[aria-selected="true"] button { background: var(--color-surface-2); }
+.search-results .ticker { flex: 0 0 auto; color: var(--color-brand); }
+.search-results .company {
+    flex: 1 1 auto; min-width: 0; max-width: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.as-of { margin: var(--s3) 0 0; font-size: .8125rem; }

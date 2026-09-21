@@ -52,6 +52,106 @@
 
     document.addEventListener("DOMContentLoaded", function () {
 
+        /* ----------------------------------------------- company search
+         * Typing a company name offers matching tickers. An enhancement
+         * only: without JavaScript the same field submits to /search,
+         * which is a real page with the same results, so nothing here is
+         * load-bearing. The list is closed on Escape and navigable with
+         * the arrow keys, because a dropdown you can only reach with a
+         * mouse is a dropdown half the people cannot use.
+         */
+        each("input[data-search]", function (field) {
+            var list = document.getElementById(field.getAttribute("aria-controls"));
+            if (!list) return;
+            var timer = null;
+            var active = -1;
+            var items = [];
+
+            function close() {
+                list.hidden = true;
+                list.innerHTML = "";
+                field.setAttribute("aria-expanded", "false");
+                active = -1;
+                items = [];
+            }
+
+            function highlight(next) {
+                if (!items.length) return;
+                active = (next + items.length) % items.length;
+                items.forEach(function (li, i) {
+                    li.setAttribute("aria-selected", i === active ? "true" : "false");
+                });
+                items[active].scrollIntoView({ block: "nearest" });
+            }
+
+            function choose(symbol) {
+                field.value = symbol;
+                close();
+                if (field.form) field.form.submit();
+            }
+
+            function render(results) {
+                if (!results.length) return close();
+                list.innerHTML = "";
+                results.forEach(function (row) {
+                    var li = document.createElement("li");
+                    li.setAttribute("role", "option");
+                    li.setAttribute("aria-selected", "false");
+                    var button = document.createElement("button");
+                    button.type = "button";
+                    var ticker = document.createElement("span");
+                    ticker.className = "ticker";
+                    ticker.textContent = row.symbol;
+                    var name = document.createElement("span");
+                    name.className = "company";
+                    /* textContent, not innerHTML: these names come from an
+                       external API and are never treated as markup. */
+                    name.textContent = row.name;
+                    button.appendChild(ticker);
+                    button.appendChild(name);
+                    button.addEventListener("click", function () { choose(row.symbol); });
+                    li.appendChild(button);
+                    list.appendChild(li);
+                });
+                items = Array.prototype.slice.call(list.querySelectorAll("li"));
+                list.hidden = false;
+                field.setAttribute("aria-expanded", "true");
+            }
+
+            field.addEventListener("input", function () {
+                var query = field.value.trim();
+                window.clearTimeout(timer);
+                if (query.length < 2) return close();
+                /* Debounced: a keystroke is not a question. */
+                timer = window.setTimeout(function () {
+                    fetch("/api/search?q=" + encodeURIComponent(query),
+                          { headers: { "Accept": "application/json" } })
+                        .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+                        .then(function (data) { render(data.results || []); })
+                        .catch(function () { close(); });
+                }, 180);
+            });
+
+            field.addEventListener("keydown", function (event) {
+                if (event.key === "Escape") return close();
+                if (!items.length) return;
+                if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    highlight(active + 1);
+                } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    highlight(active - 1);
+                } else if (event.key === "Enter" && active >= 0) {
+                    event.preventDefault();
+                    items[active].querySelector("button").click();
+                }
+            });
+
+            document.addEventListener("click", function (event) {
+                if (!list.contains(event.target) && event.target !== field) close();
+            });
+        });
+
         /* ------------------------------------------------- trade times
          * The server renders each trade time in UTC, because it cannot
          * know the reader's zone. Where JavaScript runs we restate it in
