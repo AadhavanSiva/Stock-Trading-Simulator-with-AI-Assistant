@@ -1272,3 +1272,4 @@ tr.is-you > td:first-child { box-shadow: inset 3px 0 0 var(--color-brand); }
     flex: 1 1 auto; min-width: 0; max-width: none;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.as-of { margin: var(--s3) 0 0; font-size: .8125rem; }

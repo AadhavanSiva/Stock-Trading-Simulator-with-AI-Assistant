@@ -1,0 +1,23 @@
+{# When the prices on this page were last fetched.
+
+   Shown so a stale figure reads as stale rather than quietly wrong. The
+   page never waits for a refresh — if one was needed it is running in the
+   background and will show on the next view — so this line is the only
+   thing standing between a reader and a number they assume is live. #}
+
+{% macro as_of(moment) -%}
+    {%- if moment -%}
+        <p class="as-of faint">
+            Prices as of
+            <span class="num" data-utc="{{ moment.isoformat() }}">{{ moment | long_datetime }}</span>,
+            and delayed by the data provider.
+            <a href="{{ url_for('actions') }}">Refresh now</a>
+        </p>
+    {%- else -%}
+        <p class="as-of faint">
+            These prices have no recorded time — they were stored before the
+            app started tracking that.
+            <a href="{{ url_for('actions') }}">Refresh now</a> to stamp them.
+        </p>
+    {%- endif -%}
+{%- endmacro %}

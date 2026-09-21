@@ -119,11 +119,16 @@ def record_purchase(user_id, symbol, company_name, price, shares):
 
         cur.execute(
             """
-            INSERT INTO stocks (symbol, company_name, current_price)
-            VALUES (%s, %s, %s)
+            INSERT INTO stocks (symbol, company_name, current_price, updated_at)
+            VALUES (%s, %s, %s, now())
             ON CONFLICT (symbol) DO UPDATE SET
                 company_name  = COALESCE(EXCLUDED.company_name, stocks.company_name),
-                current_price = COALESCE(EXCLUDED.current_price, stocks.current_price)
+                current_price = COALESCE(EXCLUDED.current_price, stocks.current_price),
+                -- A purchase is priced from a quote fetched moments ago, so
+                -- it stamps the price like any other write. Without this a
+                -- buy would leave its own price looking stale and set the
+                -- next page view refreshing something just fetched.
+                updated_at    = now()
             """,
             (symbol, company_name, price),
         )

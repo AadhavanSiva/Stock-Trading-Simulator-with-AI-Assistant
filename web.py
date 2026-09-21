@@ -179,6 +179,25 @@ def inject_user():
     }
 
 
+def freshen(symbols):
+    """Trigger a background refresh if needed, and say how old prices are.
+
+    Returns the timestamp to show the reader. Never blocks: the refresh it
+    may start will not have finished by the time this page renders, and
+    that is deliberate — the page shows what is stored, stamped with when
+    it was stored.
+    """
+    symbols = list(symbols)
+    if not symbols:
+        return None
+    try:
+        operations.ensure_prices_fresh(g.user_id, symbols)
+    except Exception:
+        # A refresh that cannot even be started must not cost a page view.
+        log.warning("Could not start a background price refresh", exc_info=True)
+    return operations.prices_as_of(symbols)
+
+
 def safe_next(target):
     """Return `target` only if it is a path on this site.
 
@@ -449,6 +468,7 @@ def index():
         "portfolio.html",
         motion="calm",
         summary=summary,
+        prices_as_of=freshen(row["symbol"] for row in summary.rows),
         performance=operations.performance(g.user_id),
         total_return=operations.percent_return(g.user_id, summary=summary),
         # Names the position just traded, so its row settles in rather than
@@ -461,7 +481,9 @@ def index():
 @app.route("/balance")
 @login_required
 def balance():
-    return render_template("balance.html", summary=operations.account_summary(g.user_id))
+    summary = operations.account_summary(g.user_id)
+    return render_template("balance.html", summary=summary,
+                           prices_as_of=freshen(row["symbol"] for row in summary.rows))
 
 
 # -------------------------------------------------------------------- buy
@@ -598,6 +620,7 @@ def stock_detail(symbol):
         symbol=symbol,
         quote=quote,
         watching=watchlist.contains(g.user_id, symbol),
+        prices_as_of=freshen([symbol]),
         # "All time" means the provider's history, not the company's life.
         earliest_available=market_data.EARLIEST_AVAILABLE,
         chart=chart,
@@ -1005,10 +1028,12 @@ def disclaimer():
 @app.route("/watchlist")
 @login_required
 def watchlist_view():
+    rows = operations.watchlist_rows(g.user_id)
     return render_template(
         "watchlist.html",
         motion="calm",
-        rows=operations.watchlist_rows(g.user_id),
+        rows=rows,
+        prices_as_of=freshen(row.symbol for row in rows),
     )
 
 

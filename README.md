@@ -24,6 +24,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - An append-only trade log recording every buy and sell, written in the same transaction as the cash and share movements it describes
 - A performance chart of account value over time, and a percent return measured against the opening balance
 - Today's change per position and for the account overall, measured from the previous close
+- Prices refresh themselves in the background when a page needs them and the market is open — no button to remember, and no page ever waits on the network
 - Search by company name, not just ticker — typing "apple" finds AAPL, and the results show the ticker so you learn it
 - An opt-in leaderboard showing a chosen nickname, account value and return — never a real name, email address, holding, trade or cash balance
 - A watchlist for following tickers without owning them, with today's move on each
@@ -84,6 +85,27 @@ instrument from another — stripping "Class B" would render BRK.A and
 BRK.B identically. Matching runs against the raw name as well, so trimming
 can never hide a company, and results are never merged: two assets that
 trim to the same text stay two rows, told apart by the ticker.
+
+**Prices refresh themselves.** A page that shows prices checks
+`stocks.updated_at`; if the oldest is over five minutes old *and* Alpaca's
+clock says the market is trading, the work goes to a background thread and
+the page renders immediately from what is stored. Every such page carries
+a "prices as of ..." line, because a figure that is quietly stale is worse
+than one that is visibly stale. The manual refresh is still there.
+
+Five minutes rather than one: the free plan's REST data is delayed by
+about fifteen, so a shorter floor would repaint identical numbers and
+spend the request budget proving nothing had changed. Market hours come
+from `/v2/clock` rather than a calendar in this repository, so holidays
+and half-days are right without anyone maintaining a table; an unreachable
+clock counts as closed, which holds the refresh off rather than quoting
+into the night on a guess.
+
+A module-level claim set means ten simultaneous viewers of one holding
+cause one refresh. **That set, and the quote cache, are per process** —
+fine at the single worker `render.yaml` starts, and the thing to move into
+the database before adding a second. The code says so at the claim set,
+with `stocks.updated_at` named as the column to coordinate on.
 
 **Limitations you should know about, in order of how much they matter:**
 

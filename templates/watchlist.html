@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_delta.html" import delta %}
+{% from "_as_of.html" import as_of %}
 {% set active = 'watchlist' %}
 {% block title %}Watchlist · Portfolio Tracker{% endblock %}
 
@@ -107,6 +108,8 @@
             </table>
         </div>
     </div>
+
+    {{ as_of(prices_as_of) }}
 
     <div class="glossary reveal">
         <h3>In plain words</h3>

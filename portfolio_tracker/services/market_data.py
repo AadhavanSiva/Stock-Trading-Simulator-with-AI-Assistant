@@ -231,6 +231,9 @@ def clear_quote_cache():
     with _catalogue_lock:
         _catalogue["assets"] = []
         _catalogue["expires"] = 0.0
+    with _clock_lock:
+        _clock["is_open"] = None
+        _clock["expires"] = 0.0
 
 
 def resolve_symbol(symbol, fresh=False):
@@ -560,6 +563,46 @@ def get_intraday(symbol, period="1d", interval="5m"):
     timeframe = TIMEFRAMES.get(interval, "5Min")
     return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT,
                     intraday=True)
+
+
+# ------------------------------------------------------------ market hours
+
+# The clock is asked of Alpaca rather than worked out from a calendar
+# here. Holidays move, half-days exist, and a hand-maintained table is
+# wrong every Thanksgiving; this is one cheap request that is right.
+_CLOCK_SECONDS = 180
+_clock = {"expires": 0.0, "is_open": None}
+_clock_lock = threading.Lock()
+
+
+def market_is_open():
+    """True when Alpaca says the US market is trading right now.
+
+    Returns False when the clock cannot be reached. That is deliberate and
+    the conservative direction: an unknown clock means the automatic
+    refresh holds off rather than quoting into the night on a guess. The
+    manual refresh is unaffected, so nobody is ever stuck — and the miss
+    is logged, because a permanently unreachable clock would otherwise
+    stop automatic refreshes silently.
+    """
+    with _clock_lock:
+        if _clock["expires"] > time.monotonic() and _clock["is_open"] is not None:
+            return _clock["is_open"]
+
+    try:
+        payload = _request(f"{config.ALPACA_TRADING_URL}/v2/clock",
+                           timeout=config.MARKET_QUOTE_TIMEOUT,
+                           symbol="clock") or {}
+    except MarketDataUnavailable:
+        log.warning("Could not read the market clock; treating the market as "
+                    "closed so the automatic refresh holds off")
+        return False
+
+    is_open = bool(payload.get("is_open"))
+    with _clock_lock:
+        _clock["is_open"] = is_open
+        _clock["expires"] = time.monotonic() + _CLOCK_SECONDS
+    return is_open
 
 
 # ------------------------------------------------------------- the search

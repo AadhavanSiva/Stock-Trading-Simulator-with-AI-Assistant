@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set assistant_symbol = symbol %}
 {% from "_delta.html" import delta %}
+{% from "_as_of.html" import as_of %}
 {% set crumbs = [{'label': 'Portfolio', 'url': url_for('index')}, {'label': symbol}] %}
 {% block title %}{{ symbol }} · {{ quote.company_name }} · Portfolio Tracker{% endblock %}
 
@@ -259,6 +260,8 @@
                 <div class="ledger-row"><dt>Your cash would buy</dt><dd>up to {{ quote.affordable | shares }}</dd></div>
             </dl>
         {% endif %}
+        {{ as_of(prices_as_of) }}
+
         <div class="actions">
             <a class="btn btn-primary" href="{{ url_for('buy_start', symbol=symbol) }}">Buy {{ symbol }}</a>
             {% if quote.owned is not none %}

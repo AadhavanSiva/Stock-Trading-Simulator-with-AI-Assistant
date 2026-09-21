@@ -74,7 +74,17 @@ CREATE TABLE IF NOT EXISTS stocks (
     -- When every available day was last downloaded. NULL means only a
     -- partial window is stored, so an "all time" chart must say so rather
     -- than present six months as the whole history.
-    full_history_loaded_at TIMESTAMPTZ
+    full_history_loaded_at TIMESTAMPTZ,
+    -- When current_price was last written. This is what decides whether a
+    -- page triggers a background refresh, and what the "prices as of ..."
+    -- line on every page reads from.
+    --
+    -- In the database rather than in a process, deliberately: an
+    -- in-memory timestamp forgets everything on restart, so the first
+    -- page view after a deploy would re-quote every symbol an account
+    -- holds for no reason. It also makes staleness a fact a second
+    -- process could agree with, if there is ever a second process.
+    updated_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS portfolio (
