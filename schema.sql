@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS price_history (
     -- "safe to re-run" guarantee the loader depends on.
     symbol  TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,
     date    DATE NOT NULL,
-    -- The OHLC columns stay nullable: Yahoo genuinely leaves gaps, and the
+    -- The OHLC columns stay nullable: a feed genuinely leaves gaps, and the
     -- readers already filter them. What they must never hold is a NaN.
     -- 'NaN'::numeric sorts ABOVE every other numeric, so one bad cell makes
     -- MAX(close) return NaN and every high on the history page becomes NaN
@@ -131,10 +131,13 @@ CREATE INDEX IF NOT EXISTS price_history_symbol_date_idx
 --
 -- These cannot live in price_history: that table is keyed UNIQUE (symbol,
 -- date) on a DATE, so it holds exactly one row per trading day by design.
--- Intraday needs a timestamp and many rows per day. It is also far more
--- perishable — Yahoo only serves about 7 days of 1-minute bars and 60 days
--- of coarser ones — so this table is a cache to be refilled, not a record
--- to be kept.
+-- Intraday needs a timestamp and many rows per day. It is also a cache to
+-- be refilled rather than a record to be kept, though the reason changed
+-- with the provider: Yahoo simply would not serve more than about a week
+-- of 1-minute bars, whereas Alpaca serves 1-minute bars for roughly a
+-- month and coarser ones for years. What bounds this table now is what
+-- the 1D and 5D charts ask for, not what can be obtained — so it stays
+-- small by choice, and anything deleted can be fetched again.
 CREATE TABLE IF NOT EXISTS price_intraday (
     id      SERIAL PRIMARY KEY,
     symbol  TEXT NOT NULL REFERENCES stocks(symbol) ON DELETE CASCADE,

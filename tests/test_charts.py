@@ -429,7 +429,7 @@ class TestFetch:
     @pytest.fixture(autouse=True)
     def priced(self):
         """A fetch prices the stock before downloading anything. Answer
-        that lookup here; these tests used to reach the real Yahoo."""
+        that lookup here; these tests used to reach the real provider."""
         with quote("100"):
             yield
 

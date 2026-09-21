@@ -397,7 +397,7 @@ the service, so Render needs no hand-entered build settings.
 
 What the Blueprint sets and why:
 
-- **Python 3.10.4**, as in CI. `pandas==2.0.3` has no wheels for 3.12+.
+- **Python 3.10.4**, as in CI. Nothing pins the app to 3.10 any more — `pandas` did, and it is gone — but local, CI and production all naming one version is what makes a green CI run mean anything about production.
 - **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
   HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
   `ProxyFix`) to build `https://` links, and marks the session cookie
@@ -538,6 +538,9 @@ deliberate:
 - **Deleting an account really deletes it.** One transaction removes the user row, and `ON DELETE CASCADE` takes the positions, the trade history and the rate-limit rows with it — so a table added later is covered by the schema rather than by somebody remembering to extend a list of `DELETE` statements. A test walks `information_schema` to assert that *nothing* referencing `users` keeps a row. Shared market data is deliberately left alone: prices belong to everyone.
 - **Deletion needs a typed word, not a click.** The form requires the word `DELETE`, and `operations.delete_account` re-checks it, so the guard does not live only in a template that a second front end might not render. Deleting is a `POST` with a CSRF token, and a `GET` cannot do it.
 - **The data export is a download, never cached.** It carries `Cache-Control: no-store`, and money is exported as strings rather than floats so a cost basis of `164.20` survives the round trip exactly.
+- **Browser-level headers are set on every response.** `Content-Security-Policy` (scripts from this origin only — no `unsafe-inline`, which is the half that stops an injected payload; inline *styles* are allowed because the charts position points as percentages in style attributes), `X-Frame-Options: DENY` and `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy`. `Strict-Transport-Security` is sent only behind an HTTPS proxy — setting it on plain local http would pin a developer's browser to https for `127.0.0.1` across every project on their machine.
+- **The session cookie states `SameSite=Lax`** rather than inheriting it. Every current browser defaults an unset value to Lax, but "every current browser" is a moving claim and older ones default to the permissive direction. `Lax` rather than `Strict` because Google returns a signed-in user by a top-level GET, which `Strict` would drop — sign-in would break silently.
+- **`/healthz` says what is actually deployed.** Public, no database, no market data, no session: it has to answer while the database is asleep. It reports the commit SHA, whether market data and the assistant are configured, and nothing secret. It exists because every page that differs between releases sits behind sign-in, so a deploy could previously fail to happen with no way to tell from outside.
 - **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
 
 ## Tests

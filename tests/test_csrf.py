@@ -113,7 +113,7 @@ class TestRequestsWithoutAValidTokenAreRejected:
             csrf_client.post("/sell/TST/confirm", data={"shares": "10"})
         assert portfolio.get_holding(user, "TST")[0] == Decimal("10")
 
-    def test_a_rejected_refresh_never_calls_yahoo(self, csrf_client, user):
+    def test_a_rejected_refresh_never_calls_the_provider(self, csrf_client, user):
         own(user)
         with patch.object(market_data, "get_live_price") as live:
             csrf_client.post("/actions/refresh-prices")

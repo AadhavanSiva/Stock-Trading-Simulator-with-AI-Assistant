@@ -10,7 +10,7 @@ Every operation takes an explicit `user_id`. Resolving *which* account
 that is belongs to the front end: the web app reads it from the session,
 the CLI from PORTFOLIO_USER in .env.
 
-No SQL and no yfinance calls live here — those stay in models/ and
+No SQL and no market-data calls live here — those stay in models/ and
 services/ respectively.
 """
 import logging

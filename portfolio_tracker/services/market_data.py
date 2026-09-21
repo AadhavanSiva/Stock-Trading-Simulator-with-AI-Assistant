@@ -25,7 +25,7 @@ import logging
 import threading
 import time
 from collections import namedtuple
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import requests
@@ -415,12 +415,42 @@ TIMEFRAMES = {
 _MAX_PAGES = 20
 
 
-def _start_for(period):
+# How far back a *session-based* range has to reach to be sure of catching
+# the last one that traded.
+#
+# This is the fetch-side half of a constraint the read side already
+# documents: see history.get_intraday_sessions, which says "1 day" has to
+# mean the latest trading session, not the last 24 hours, because a
+# wall-clock window returns nothing all weekend, on holidays, and before
+# the open. That fix was applied to the query that *reads* stored bars —
+# but if the fetch window is wall-clock, there is nothing stored to read,
+# and the chart is empty for exactly the same reason.
+#
+# So the fetch deliberately over-reaches and lets the session SQL pick the
+# day. Seven days clears a normal weekend and a Monday or Friday holiday;
+# fourteen clears the longest stretch the US market closes for. Costs one
+# request either way, and price_intraday is UNIQUE (symbol, ts), so the
+# extra days are discarded on insert rather than duplicated.
+INTRADAY_LOOKBACK_DAYS = {"1d": 7, "5d": 14}
+
+# The earliest bar Alpaca serves on the free IEX feed, measured rather than
+# assumed: a "max" request for AAPL returns nothing before 2020-07-27.
+# Worth stating because "All time" on a chart means *this*, not the
+# company's life on the market, and the UI has to say so.
+EARLIEST_AVAILABLE = date(2020, 7, 27)
+
+
+def _start_for(period, intraday=False):
+    if intraday:
+        days = INTRADAY_LOOKBACK_DAYS.get(period)
+        if days is not None:
+            return datetime.now(timezone.utc) - timedelta(days=days)
+
     days = PERIODS.get(period, PERIODS["6mo"])
     if days is None:
-        # Alpaca's equity history starts in 2016. Asking for earlier is
-        # accepted and simply returns nothing before then.
-        return datetime(2015, 1, 1, tzinfo=timezone.utc)
+        # Before the provider's own history, so "max" means everything
+        # there is rather than a window we picked.
+        return datetime(EARLIEST_AVAILABLE.year, 1, 1, tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
@@ -449,9 +479,11 @@ def _bars(symbol, timeframe, start, timeout):
 
         # `bars` is null, not an empty object, when there is nothing.
         rows = (payload.get("bars") or {}).get(symbol) or []
+        unreadable = 0
         for row in rows:
             ts = _timestamp(row.get("t"))
             if ts is None:
+                unreadable += 1
                 continue
             collected.append(Bar(
                 ts=ts,
@@ -461,6 +493,23 @@ def _bars(symbol, timeframe, start, timeout):
                 close=_to_decimal(row.get("c")),
                 volume=int(row["v"]) if row.get("v") is not None else None,
             ))
+
+        # Bars arrived but not one of them could be read. That is a
+        # parsing failure — a changed timestamp format, most likely — and
+        # it must not leave by the same door as "this range had no
+        # trading". Dropping them silently would report "0 new days"
+        # during a total outage of our own making, which is precisely the
+        # failure this module was hardened against when it used yfinance.
+        if rows and unreadable == len(rows):
+            log.error(
+                "Alpaca returned %s %s bars for %s and none could be parsed; "
+                "the timestamp format may have changed. First: %r",
+                len(rows), timeframe, symbol, rows[0].get("t"),
+            )
+            raise MarketDataUnavailable(symbol)
+        if unreadable:
+            log.warning("Skipped %s unreadable %s bars for %s of %s",
+                        unreadable, timeframe, symbol, len(rows))
 
         page_token = payload.get("next_page_token")
         if not page_token:
@@ -472,7 +521,7 @@ def _bars(symbol, timeframe, start, timeout):
     return collected
 
 
-def _history(symbol, timeframe, period, timeout):
+def _history(symbol, timeframe, period, timeout, intraday=False):
     """Bars, telling "Alpaca is down" apart from "no prices".
 
     Anything that is not a clean answer — a timeout, rejected credentials,
@@ -485,7 +534,7 @@ def _history(symbol, timeframe, period, timeout):
         log.info("Alpaca does not list the symbol %s", symbol)
         raise UnknownSymbol(symbol)
 
-    bars = _bars(symbol, timeframe, _start_for(period), timeout)
+    bars = _bars(symbol, timeframe, _start_for(period, intraday=intraday), timeout)
     if not bars:
         log.info("Alpaca has no %s bars for %s over %s", timeframe, symbol, period)
     return bars
@@ -499,11 +548,11 @@ def get_price_history(symbol, period="6mo"):
 def get_intraday(symbol, period="1d", interval="5m"):
     """Intraday bars for the short-range charts.
 
-    Alpaca serves intraday history well beyond what these charts ask for,
-    so unlike Yahoo there is no per-interval reach to work around. The
-    callers still pass the period the chart needs rather than everything
-    available, because the rows are stored and a wider net is only more to
-    write and throw away.
+    `period` names a number of *trading sessions*, not a span of hours,
+    and the window fetched is deliberately wider than it — see
+    INTRADAY_LOOKBACK_DAYS. Asking for literally the last 24 hours returns
+    nothing from Friday evening until Monday's open.
     """
     timeframe = TIMEFRAMES.get(interval, "5Min")
-    return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT)
+    return _history(symbol, timeframe, period, config.MARKET_HISTORY_TIMEOUT,
+                    intraday=True)

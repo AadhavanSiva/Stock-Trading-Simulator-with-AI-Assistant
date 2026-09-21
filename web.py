@@ -10,6 +10,7 @@ Run it with:  python -m flask --app web run
 """
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -24,7 +25,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
 from portfolio_tracker.models import history, portfolio, stocks, users, watchlist
-from portfolio_tracker.services import assistant
+from portfolio_tracker.services import assistant, market_data
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,13 @@ csrf = CSRFProtect(app)
 if config.BEHIND_HTTPS_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.config["SESSION_COOKIE_SECURE"] = True
+
+# Stated rather than left to the browser. Every current browser defaults an
+# unset SameSite to Lax, but "every current browser" is a moving claim and
+# an older one defaults to None, which is the permissive direction. Lax
+# still allows the top-level GET that Google's OAuth callback arrives as.
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 oauth = OAuth(app)
 if config.google_configured():
@@ -84,6 +92,68 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+@app.after_request
+def security_headers(response):
+    """Headers the app cannot set from a template.
+
+    None of these replace anything already done — CSRF tokens, the Secure
+    cookie, escaping — they close the gaps a browser can only be told
+    about in a header.
+
+    The CSP is deliberately strict about where code may come from and
+    deliberately permissive about inline style: the charts compute
+    positions as percentages and set them as style attributes, so
+    'unsafe-inline' for styles is load-bearing rather than laziness.
+    Scripts have no such allowance, which is the half that matters.
+    """
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Only meaningful over HTTPS, and actively harmful to set when a
+    # developer is on plain http at 127.0.0.1 — it would pin their browser
+    # to https for localhost across every project.
+    if config.BEHIND_HTTPS_PROXY:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("Content-Security-Policy", "; ".join([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        # The Ask panel renders Google's search-suggestion HTML inside a
+        # sandboxed iframe served from a srcdoc, which is an opaque origin.
+        "frame-src 'self'",
+        "connect-src 'self'",
+        "form-action 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+    ]))
+    return response
+
+
+@app.route("/healthz")
+def healthz():
+    """What is actually running here.
+
+    Public and deliberately cheap: no database, no market data, no
+    session. It exists because there was previously no way to tell which
+    commit a deploy was serving — every page that differs between releases
+    is behind sign-in, so a deploy could silently not have happened.
+
+    Render exposes the commit as RENDER_GIT_COMMIT; locally there is none,
+    and "unknown" is the honest answer rather than a fabricated one.
+    """
+    return {
+        "status": "ok",
+        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
+        "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+        "behind_proxy": config.BEHIND_HTTPS_PROXY,
+        "market_data_configured": config.alpaca_configured(),
+        "assistant_configured": assistant.research_available(),
+    }
 
 
 @app.context_processor
@@ -522,6 +592,8 @@ def stock_detail(symbol):
         symbol=symbol,
         quote=quote,
         watching=watchlist.contains(g.user_id, symbol),
+        # "All time" means the provider's history, not the company's life.
+        earliest_available=market_data.EARLIEST_AVAILABLE,
         chart=chart,
         readouts=charts.readouts(chart),
         window=window,
