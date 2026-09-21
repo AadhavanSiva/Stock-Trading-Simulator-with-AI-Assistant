@@ -7,6 +7,8 @@ import pytest
 from portfolio_tracker import operations
 from portfolio_tracker.db import cursor
 from portfolio_tracker.models import portfolio, stocks
+from conftest import asset_payload, route_alpaca, snapshot_payload
+
 from portfolio_tracker.services import market_data
 
 
@@ -23,27 +25,25 @@ def hold(user_id, symbol, shares, price):
 
 class TestStoringThePreviousClose:
     def test_a_quote_reports_one(self):
-        info = {"currentPrice": 100.0, "longName": "Test", "regularMarketPreviousClose": 95.0}
-        with patch.object(market_data, "_fetch_quote",
-                          return_value=(Decimal("100"), "Test", Decimal("95"))):
-            assert market_data.get_quote("X") == (Decimal("100"), "Test", Decimal("95"))
-        assert info["regularMarketPreviousClose"] == 95.0   # the field we read
+        """It comes from prevDailyBar — the previous *session*."""
+        with route_alpaca(asset=asset_payload(symbol="X", name="Test"),
+                          snapshot=snapshot_payload(price="100",
+                                                    previous_close="95",
+                                                    symbol="X")):
+            assert market_data.get_quote("X") == (
+                Decimal("100.0"), "Test", Decimal("95.0"))
 
-    def test_the_older_spelling_is_accepted(self):
-        """Yahoo still returns `previousClose` on some symbols."""
-        class Ticker:
-            def __init__(self, *args, **kwargs):
-                self.info = {"currentPrice": 10.0, "previousClose": 9.0}
-
-        with patch.object(market_data.yf, "Ticker", Ticker):
-            assert market_data.get_quote("X")[2] == Decimal("9.0")
+    def test_todays_bar_is_never_mistaken_for_it(self):
+        """dailyBar is today. Using it would report every stock as flat."""
+        snapshot = snapshot_payload(price="100", previous_close=None, symbol="X")
+        snapshot["dailyBar"] = {"c": 100.0}
+        with route_alpaca(asset=asset_payload(symbol="X"), snapshot=snapshot):
+            assert market_data.get_quote("X")[2] is None
 
     def test_a_missing_close_is_none_not_zero(self):
-        class Ticker:
-            def __init__(self, *args, **kwargs):
-                self.info = {"currentPrice": 10.0}
-
-        with patch.object(market_data.yf, "Ticker", Ticker):
+        with route_alpaca(asset=asset_payload(symbol="X"),
+                          snapshot=snapshot_payload(previous_close=None,
+                                                    symbol="X")):
             assert market_data.get_quote("X")[2] is None
 
     def test_refreshing_stores_it(self, seeded):

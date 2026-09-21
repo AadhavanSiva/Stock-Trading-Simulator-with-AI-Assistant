@@ -15,7 +15,9 @@ services:
     # requests. The timeout exceeds the assistant's 120 s Gemini time limit.
     startCommand: gunicorn web:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 150
     envVars:
-      # pandas 2.0.3 has no wheels for 3.12+; this matches CI and local development.
+      # Matches CI and local development. Nothing now pins the app to
+      # 3.10 specifically — pandas did, and it is gone — but keeping one
+      # version across all three is what makes CI's result mean anything.
       - key: PYTHON_VERSION
         value: 3.10.4
       - key: BEHIND_HTTPS_PROXY
@@ -29,4 +31,10 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      # Market data. Without these the app starts and serves every page,
+      # but nothing can be priced — so they are required, not optional.
+      - key: ALPACA_API_KEY_ID
+        sync: false
+      - key: ALPACA_API_SECRET_KEY
         sync: false

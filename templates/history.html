@@ -40,8 +40,8 @@
                     <th scope="col" data-sort="text">Investment</th>
                     <th scope="col" class="r" data-sort="number">Today</th>
                     <th scope="col" class="r" data-sort="number">{{ days }}-day average</th>
-                    <th scope="col" class="r" data-sort="number">Highest</th>
-                    <th scope="col" class="r" data-sort="number">Lowest</th>
+                    <th scope="col" class="r" data-sort="number">{{ days }}-day high</th>
+                    <th scope="col" class="r" data-sort="number">{{ days }}-day low</th>
                 </tr>
                 </thead>
                 <tbody class="stagger">
@@ -56,8 +56,8 @@
                         </td>
                         <td class="r num" data-label="Today" data-value="{{ row.current_price or 0 }}">{{ row.current_price | money }}</td>
                         <td class="r num" data-label="{{ days }}-day average" data-value="{{ row.average or 0 }}">{{ row.average | money }}</td>
-                        <td class="r num" data-label="Highest" data-value="{{ row.high or 0 }}">{{ row.high | money }}</td>
-                        <td class="r num" data-label="Lowest" data-value="{{ row.low or 0 }}">{{ row.low | money }}</td>
+                        <td class="r num" data-label="{{ days }}-day high" data-value="{{ row.high or 0 }}">{{ row.high | money }}</td>
+                        <td class="r num" data-label="{{ days }}-day low" data-value="{{ row.low or 0 }}">{{ row.low | money }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
@@ -82,10 +82,13 @@
                 </dd>
             </div>
             <div>
-                <dt>Highest and lowest</dt>
+                <dt>{{ days }}-day high and low</dt>
                 <dd>
-                    The best and worst closing prices on record here. A wide gap
-                    between them means a bumpier ride.
+                    The best and worst closing prices over the same {{ days }}
+                    days as the average beside them. A wide gap means a bumpier
+                    ride. These are deliberately not all-time figures: a price
+                    from before a stock split says nothing about whether today
+                    is dear or cheap.
                 </dd>
             </div>
             <div>

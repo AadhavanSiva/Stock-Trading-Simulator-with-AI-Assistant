@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from portfolio_tracker import charts
+from portfolio_tracker.config import ConfigurationError
 from portfolio_tracker.errors import (
     InsufficientFunds, MarketDataUnavailable, UnknownUser, ValidationError,
 )
@@ -59,6 +60,16 @@ def _market_failure(symbol, exc):
     shown: it means nothing to a reader and can expose internals.
     MarketDataUnavailable was already logged where it was raised.
     """
+    # A missing API key is not an outage, and telling someone to "try
+    # again in a minute" would send them back to a page that can never
+    # work. It is the first thing a new install hits, so it says what to
+    # do instead.
+    if isinstance(exc, ConfigurationError):
+        log.error("Market data is not configured: %s", exc)
+        return (
+            "Market data is not configured yet. Add your Alpaca API keys to "
+            ".env — see .env.example — and restart the app."
+        )
     if not isinstance(exc, MarketDataUnavailable):
         log.error("Market data call for %s failed unexpectedly", symbol, exc_info=exc)
     return str(MarketDataUnavailable(symbol))
@@ -67,7 +78,7 @@ def _market_failure(symbol, exc):
 def _job_failure(symbol, exc):
     """A short per-symbol note for the refresh and history reports."""
     if isinstance(exc, MarketDataUnavailable):
-        return "Yahoo Finance didn't respond; try again in a minute"
+        return "the market data service didn't respond; try again in a minute"
     log.error("Bulk job failed for %s", symbol, exc_info=exc)
     return "something went wrong; the error has been logged"
 

@@ -8,7 +8,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 
 ## Features
 
-- Pulls live stock prices from Yahoo Finance via the `yfinance` API
+- Pulls stock prices from Alpaca's market data API (IEX feed, delayed on the free plan)
 - Stores portfolio holdings and stock data in a PostgreSQL database with proper relational structure (foreign keys linking holdings to stock reference data)
 - Calculates real-time gain/loss per holding, with cost basis and portfolio totals
 - Repeat buys of the same ticker merge into a single position at a weighted-average cost
@@ -37,12 +37,42 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - **Python** — application logic, API integration
 - **PostgreSQL** — relational data storage
 - **psycopg2** — Python/PostgreSQL database driver
-- **yfinance** — live market data
+- **Alpaca** — market data (REST; `requests` is the only client needed)
 - **python-dotenv** — environment variable management
 - **Flask** — server-rendered web interface (Jinja templates, plain CSS, no build step)
 - **Authlib** — Google OAuth / OpenID Connect
 - **Google Gemini** (`google-genai`) — the Ask research assistant
 - **pytest** — test suite
+
+## Where the prices come from
+
+Market data is Alpaca's REST API, and `portfolio_tracker/services/market_data.py`
+is the only module that talks to it.
+
+Two of Alpaca's hosts are used, because the data is split across them.
+`data.alpaca.markets` serves snapshots and bars; `api.alpaca.markets` serves
+the asset catalogue, which is the only place a company's **name** lives and
+the only endpoint that can say whether a ticker exists at all. That second
+point is load-bearing rather than incidental: the bars endpoint answers
+`200` with `"bars": null` for a symbol that does not exist, which is
+byte-for-byte what it answers for a real symbol with no trading in the
+requested range. The catalogue's `404` is the only unambiguous "no such
+thing" the API offers, so a lookup asks there first.
+
+**Limitations you should know about, in order of how much they matter:**
+
+- **The free plan is IEX-only.** IEX is one exchange, not the consolidated
+  tape, so a price here can differ slightly from what a broker or Google
+  shows — thin names and quiet periods differ most. Asking for the `sip`
+  feed without a paid plan is refused with a `403` rather than quietly
+  downgraded, which is the better failure but still a failure.
+- **REST data on the free plan is delayed**, by around 15 minutes. This is
+  a simulator, so a delay is not a correctness problem, but it does mean a
+  "live" price is nothing of the sort. The footer says so on every page.
+- **About 200 requests a minute.** The quote cache and the separate,
+  longer-lived asset cache exist partly for this: a company's name changes
+  with corporate actions rather than seconds, so re-fetching it with every
+  quote would double the request count for nothing.
 
 ## Database Schema
 
@@ -72,7 +102,7 @@ portfolio_tracker/
         watchlist.py       tickers followed but not owned
         users.py           accounts and cash balances
     services/
-        market_data.py     the only module that talks to yfinance
+        market_data.py     the only module that talks to Alpaca
     errors.py              domain errors shared across layers
     operations.py          shared logic: validate, price, buy, sell, refresh
     reports.py             terminal rendering
@@ -311,6 +341,20 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    Set `PORTFOLIO_USER_ID` to the account id to say which you mean; it
    takes precedence over `PORTFOLIO_USER`.
 
+   **Market data keys.** The app cannot price anything without them.
+   Create a free account at [alpaca.markets](https://alpaca.markets) — a
+   paper trading account is enough — then **Home → API Keys → Generate**,
+   and add both values to `.env`:
+
+   ```
+   ALPACA_API_KEY_ID=<your key id>
+   ALPACA_API_SECRET_KEY=<your secret key>
+   ```
+
+   Both are shown once; the secret cannot be retrieved afterwards, only
+   regenerated. Until they are set, every page still loads and says market
+   data is not configured rather than failing with an error.
+
    **Web:**
 
    ```bash
@@ -368,9 +412,11 @@ tests ignore it, so they can never reach the hosted database.
 
 Expect a cold start of up to a minute after the free service has slept
 (15 minutes idle), and a brief pause while an idle Neon database wakes.
-Yahoo Finance also rate-limits some cloud IP ranges more readily than home
-connections; when that happens the app says prices could not be fetched
-rather than showing an error page.
+Alpaca authenticates by API key rather than by IP, so a cloud host is not
+rate-limited differently from a laptop — but the free plan's ~200 requests
+a minute is shared across the whole service, so a busy deploy can still hit
+it. When that happens the app says prices could not be fetched rather than
+showing an error page, and the log records that it was the rate limit.
 
 ## Upgrading an existing database
 
@@ -483,8 +529,10 @@ deliberate:
 - **CSRF tokens on every state-changing request.** Flask-WTF's `CSRFProtect` checks every POST: buying and selling (each step), refreshing prices, loading history, fetching chart data, the Ask page and its JSON endpoint, dev sign-in, and signing out. Forms carry a hidden `csrf_token`; the Ask panel sends the same token as an `X-CSRFToken` header. The Ask endpoint used to rely on accepting only JSON, which stops a plain cross-site HTML form but not every cross-site request, so it now needs the token too. A request without a valid token is refused with 400 before the route runs: no trade, no API call, nothing counted against the rate limit. Tokens are tied to the session and last as long as it does.
 - **Signing out is a POST.** A sign-out link could be triggered by any other site with an image tag. An old link to `/logout` now shows a page with a Sign out button instead.
 - **A fixed signing key in production.** See `FLASK_SECRET_KEY` under Setup.
-- **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from Yahoo Finance or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
-- **Market data calls are bounded.** Every yfinance call has a time limit (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
+- **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from the market data provider or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
+- **Market data failures are told apart rather than lumped together.** Alpaca's documented codes are handled individually: `401` for rejected credentials and `403` for a data plan that does not cover the request are logged as *configuration* problems, because they will not fix themselves on a retry; `429` logs the rate limit and what it is; `400` and `5xx` log Alpaca's own explanation. None of that text reaches the page — a reader gets one sentence saying to try again shortly. The status codes were taken from Alpaca's error table rather than assumed, because this project has twice been caught out by exactly that assumption: Gemini answers `400` for a bad key where `401` would be expected, and yfinance returned an empty frame for an outage where an exception would be.
+- **An unconfigured install says so.** With no API keys set, a lookup explains that market data is not configured and points at `.env`, rather than telling someone to try again in a minute — which is the one thing that cannot possibly help.
+- **Market data calls are bounded.** Every call has an explicit connect and read timeout (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
 - **The assistant's rate limit is in the database** (20 questions per account per 10 minutes), so it survives restarts and holds across every worker process.
 - **The trade log cannot be rewritten.** `trades` carries a trigger that refuses any `UPDATE` or `DELETE`, so neither an application bug nor a hand-typed `psql` session can quietly alter the record of what happened. The one sanctioned exception is erasing an account, which sets `app.erasing_account` with `SET LOCAL` for the length of that one transaction; the exemption ends when the transaction does and cannot leak into a later query. A direct `DELETE FROM users` is therefore refused, with a hint naming `users.delete_account` as the way through.
 - **Deleting an account really deletes it.** One transaction removes the user row, and `ON DELETE CASCADE` takes the positions, the trade history and the rate-limit rows with it — so a table added later is covered by the schema rather than by somebody remembering to extend a list of `DELETE` statements. A test walks `information_schema` to assert that *nothing* referencing `users` keeps a row. Shared market data is deliberately left alone: prices belong to everyone.
@@ -499,7 +547,7 @@ pip install -r requirements.txt
 python -m pytest
 ```
 
-Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. yfinance and Gemini are mocked, and a test that reaches the real Gemini API fails.
+Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. Market data and Gemini are both mocked. The market data guard is installed on the HTTP session itself rather than on named functions, so a request to an endpoint added later is caught without anyone remembering to extend it; a test that reaches the real API fails loudly rather than quietly passing.
 
 GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.10.4 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
 

@@ -1,15 +1,51 @@
 """Price chart tests: the geometry, the stored series, and the stock page."""
 from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, time as dt_time, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 
 from portfolio_tracker import charts
 from portfolio_tracker.db import cursor
 from portfolio_tracker.models import history, portfolio, stocks
 from portfolio_tracker.services import market_data
+from portfolio_tracker.services.market_data import Bar
+
+
+EXCHANGE = ZoneInfo("America/New_York")
+
+
+def daily_bars(closes, end=None):
+    """One bar per calendar day, stamped at the session open."""
+    last = end or datetime.now(EXCHANGE).date()
+    made = []
+    for offset, close in enumerate(reversed(closes)):
+        day = last - timedelta(days=offset)
+        session = datetime.combine(day, dt_time(9, 30), EXCHANGE)
+        value = Decimal(str(close))
+        made.append(Bar(ts=session.astimezone(timezone.utc), open=value,
+                        high=value, low=value, close=value, volume=1))
+    return list(reversed(made))
+
+
+def _bar(moment, close):
+    """One bar at an exact moment, in whatever zone `moment` carries."""
+    value = Decimal(str(close))
+    return Bar(ts=moment.astimezone(timezone.utc), open=value, high=value,
+               low=value, close=value, volume=1)
+
+
+def minute_bars(closes, every=1, end=None):
+    """Bars `every` minutes apart, ending now."""
+    finish = end or datetime.now(timezone.utc)
+    made = []
+    for offset, close in enumerate(reversed(closes)):
+        value = None if close is None else Decimal(str(close))
+        made.append(Bar(ts=finish - timedelta(minutes=every * offset),
+                        open=value, high=value, low=value, close=value, volume=1))
+    return list(reversed(made))
 
 
 def text(response):
@@ -183,11 +219,7 @@ class TestInsertCounts:
     def test_daily_count_is_exact_beyond_one_page(self, db):
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
         n = 257  # deliberately not a multiple of 100
-        frame = pd.DataFrame(
-            {"Open": [1.0] * n, "High": [1.0] * n, "Low": [1.0] * n,
-             "Close": [1.0] * n, "Volume": [1] * n},
-            index=pd.date_range(end=pd.Timestamp.today(), periods=n, freq="D"),
-        )
+        frame = daily_bars([1.0] * n)
         with patch.object(history, "get_price_history", return_value=frame):
             assert history.load_history_for_symbol("AAPL") == n
             # A second run inserts nothing and must say so.
@@ -196,30 +228,22 @@ class TestInsertCounts:
     def test_intraday_count_is_exact_beyond_one_page(self, db):
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
         n = 234
-        frame = pd.DataFrame(
-            {"Close": [1.0] * n},
-            index=pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=n, freq="min"),
-        )
+        frame = minute_bars([1.0] * n)
         with patch.object(history, "get_intraday", return_value=frame):
             assert history.load_intraday_for_symbol("AAPL") == n
 
     def test_partial_overlap_counts_only_new_rows(self, db):
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
-        index = pd.date_range(end=pd.Timestamp.today(), periods=150, freq="D")
-        cols = lambda k: {"Open": [1.0]*k, "High": [1.0]*k, "Low": [1.0]*k,
-                          "Close": [1.0]*k, "Volume": [1]*k}
-        with patch.object(history, "get_price_history",
-                          return_value=pd.DataFrame(cols(120), index=index[:120])):
+        all_days = daily_bars([1.0] * 150)
+        with patch.object(history, "get_price_history", return_value=all_days[:120]):
             history.load_history_for_symbol("AAPL")
-        with patch.object(history, "get_price_history",
-                          return_value=pd.DataFrame(cols(150), index=index)):
+        with patch.object(history, "get_price_history", return_value=all_days):
             assert history.load_history_for_symbol("AAPL") == 30
 
 
 class TestIntraday:
     def frame(self, closes):
-        index = pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=len(closes), freq="5min")
-        return pd.DataFrame({"Close": closes}, index=index)
+        return minute_bars(closes, every=5)
 
     def test_loads_and_reads_back(self, db):
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
@@ -238,7 +262,7 @@ class TestIntraday:
     def test_gaps_in_the_feed_are_skipped(self, db):
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
         with patch.object(history, "get_intraday",
-                          return_value=self.frame([1.5, float("nan"), 3.5])):
+                          return_value=minute_bars([1.5, None, 3.5], every=5)):
             assert history.load_intraday_for_symbol("AAPL") == 2
 
     def test_timestamps_keep_their_timezone(self, db):
@@ -253,13 +277,16 @@ class TestIntraday:
         empty every weekend and holiday. Bars from a session three days ago
         must still be the 1D chart when nothing newer exists."""
         stocks.upsert_stock("AAPL", "Apple", Decimal("100"))
-        friday = pd.Timestamp.now(tz="America/New_York").normalize() - pd.Timedelta(days=3)
-        older = friday - pd.Timedelta(days=1)
-        bars = pd.DataFrame(
-            {"Close": [1.0, 2.0, 3.0, 4.0]},
-            index=[older + pd.Timedelta(hours=10), older + pd.Timedelta(hours=11),
-                   friday + pd.Timedelta(hours=10), friday + pd.Timedelta(hours=11)],
-        )
+        midnight = datetime.now(EXCHANGE).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        friday = midnight - timedelta(days=3)
+        older = friday - timedelta(days=1)
+        bars = [
+            _bar(older + timedelta(hours=10), 1.0),
+            _bar(older + timedelta(hours=11), 2.0),
+            _bar(friday + timedelta(hours=10), 3.0),
+            _bar(friday + timedelta(hours=11), 4.0),
+        ]
         with patch.object(history, "get_intraday", return_value=bars):
             history.load_intraday_for_symbol("AAPL")
 
@@ -306,9 +333,10 @@ class TestStockPage:
         """Regression: the 1D panel queried every stored day, so it showed a
         1980 split-adjusted $0.04 as the one-day low."""
         store_daily("AAPL", [0.04, 0.05, 330, 331])  # ancient cheap history
-        base = pd.Timestamp.now(tz="America/New_York").normalize() - pd.Timedelta(days=1)
-        bars = pd.DataFrame({"Close": [331.0, 335.0, 332.0]},
-                            index=[base + pd.Timedelta(hours=h) for h in (10, 11, 12)])
+        base = datetime.now(EXCHANGE).replace(
+            hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        bars = [_bar(base + timedelta(hours=h), close)
+                for h, close in ((10, 331.0), (11, 335.0), (12, 332.0))]
         with patch.object(history, "get_intraday", return_value=bars):
             history.load_intraday_for_symbol("AAPL")
         with quote("332"):
@@ -440,13 +468,9 @@ class TestFetch:
     def test_fetching_a_stock_you_have_never_bought_works(self, client):
         """Regression: price_history references stocks(symbol), and a company
         you have only viewed has no stocks row. The other fetch tests mock the
-        loader, so this one runs the real insert against a mocked Yahoo frame
-        with NO stocks row seeded beforehand."""
-        frame = pd.DataFrame(
-            {"Open": [1.0, 1.1], "High": [1.2, 1.3], "Low": [0.9, 1.0],
-             "Close": [1.1, 1.2], "Volume": [100, 200]},
-            index=pd.to_datetime([date.today() - timedelta(days=1), date.today()]),
-        )
+        loader, so this one runs the real insert against mocked bars with NO
+        stocks row seeded beforehand."""
+        frame = daily_bars([1.1, 1.2])
         with quote("1.20", "Brand New Co"),                 patch.object(history, "get_price_history", return_value=frame):
             response = client.post("/stock/NEWCO/fetch", data={"range": "1y"},
                                    follow_redirects=True)

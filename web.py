@@ -571,8 +571,8 @@ def stock_fetch(symbol):
             noun = "days"
     except MarketDataUnavailable:
         # Already logged by market_data, with the real error.
-        flash(f"Could not fetch prices for {symbol}. Yahoo Finance didn't respond, "
-              "so try again in a minute.", "error")
+        flash(f"Could not fetch prices for {symbol}. The market data service "
+              "didn't respond, so try again in a minute.", "error")
         return redirect(url_for("stock_detail", symbol=symbol, range=window))
     except Exception:
         log.exception("Fetching %s prices for %s failed", window, symbol)
@@ -828,8 +828,12 @@ def sell_confirm(symbol):
 @app.route("/history")
 @login_required
 def history_view():
-    averages = {symbol: avg for symbol, avg in history.get_recent_averages(30)}
-    highs_lows = {symbol: (high, low) for symbol, high, low in history.get_high_low()}
+    # One window for both, so the average and the range beside it can
+    # never describe different periods.
+    days = history.RECENT_DAYS
+    averages = {symbol: avg for symbol, avg in history.get_recent_averages(days)}
+    highs_lows = {symbol: (high, low)
+                  for symbol, high, low in history.get_high_low(days)}
 
     rows = []
     for (symbol, name, held, paid, current, gain,
@@ -844,7 +848,7 @@ def history_view():
             "current_price": current,
         })
 
-    return render_template("history.html", rows=rows, days=30)
+    return render_template("history.html", rows=rows, days=days)
 
 
 # ----------------------------------------------------------------- trades
