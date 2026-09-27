@@ -500,10 +500,13 @@
 
         // A restored answer keeps its sources and search suggestions: the
         // terms require the suggestions to accompany a searched answer
-        // whenever it is shown, not just the first time.
+        // whenever it is shown, not just the first time. A restored notice
+        // is shown in today's wording, not whatever was saved with it, so
+        // text the app has since changed never comes back from storage.
         transcript.forEach(function (turn) {
             questionTurn(turn.question);
-            var reply = answerTurn(turn.answer, turn.notice);
+            var notice = turn.notice ? (drawer.dataset.researchNotice || turn.notice) : "";
+            var reply = answerTurn(turn.answer, notice);
             grounding(reply, turn.sources, turn.suggestions, turn.searches);
             answerFoot(reply, turn.question, turn.answer);
         });

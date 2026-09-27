@@ -176,6 +176,7 @@ def inject_user():
         "starting_cash": users.starting_cash(),
         "assistant_enabled": config.ASSISTANT_ENABLED,
         "assistant_research": assistant.research_available(),
+        "assistant_research_notice": assistant.SEARCH_UNAVAILABLE_NOTICE,
     }
 
 

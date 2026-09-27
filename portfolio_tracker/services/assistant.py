@@ -321,8 +321,9 @@ def _ask(context, question, earlier):
     if error is not None and search and _is_quota(error):
         # A 429 with search on is almost always search itself being refused
         # (free tier, or allowance used up). Answer without it this time.
-        log.info("assistant: search refused (429); answering without web research. "
-                 "Search grounding needs billing enabled on the key's Cloud project.")
+        _log_failure(error, "web search refused (429), answering without research; "
+                            "search grounding needs billing enabled on the key's Cloud project",
+                     level=logging.WARNING)
         _block_search()
         notice = SEARCH_UNAVAILABLE_NOTICE
         response, error = _call(client, context, question, earlier, False)
@@ -432,14 +433,15 @@ def _redact(text):
     return _KEY_PATTERN.sub("[redacted]", text)
 
 
-def _log_failure(exc, hint):
+def _log_failure(exc, hint, level=logging.ERROR):
     """Server-side only: error type, UTC timestamp, message and traceback.
 
     The traceback is formatted here rather than passed as exc_info so it
     goes through _redact before any handler sees it.
     """
     detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    log.error(
+    log.log(
+        level,
         "assistant failure: %s | %s at %s | %s\n%s",
         hint,
         type(exc).__name__,
