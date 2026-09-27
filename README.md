@@ -445,7 +445,7 @@ the service, so Render needs no hand-entered build settings.
 
 What the Blueprint sets and why:
 
-- **Python 3.10.4**, as in CI. Nothing pins the app to 3.10 any more — `pandas` did, and it is gone — but local, CI and production all naming one version is what makes a green CI run mean anything about production.
+- **Python 3.13.15**, as in CI. Local, CI and production all naming one version is what makes a green CI run mean anything about production.
 - **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
   HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
   `ProxyFix`) to build `https://` links, and marks the session cookie
@@ -600,7 +600,7 @@ python -m pytest
 
 Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. Market data and Gemini are both mocked. The market data guard is installed on the HTTP session itself rather than on named functions, so a request to an endpoint added later is caught without anyone remembering to extend it; a test that reaches the real API fails loudly rather than quietly passing.
 
-GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.10.4 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
+GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
 
 ## What I Gained from building this
 

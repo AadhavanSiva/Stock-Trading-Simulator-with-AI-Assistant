@@ -15,11 +15,10 @@ services:
     # requests. The timeout exceeds the assistant's 120 s Gemini time limit.
     startCommand: gunicorn web:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 150
     envVars:
-      # Matches CI and local development. Nothing now pins the app to
-      # 3.10 specifically — pandas did, and it is gone — but keeping one
-      # version across all three is what makes CI's result mean anything.
+      # Matches CI and local development. Keeping one version across all
+      # three is what makes CI's result mean anything about production.
       - key: PYTHON_VERSION
-        value: 3.10.4
+        value: 3.13.15
       - key: BEHIND_HTTPS_PROXY
         value: "1"
       - key: FLASK_SECRET_KEY
