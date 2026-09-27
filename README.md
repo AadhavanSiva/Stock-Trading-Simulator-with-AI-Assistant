@@ -10,9 +10,13 @@ A paper-trading web app: sign in with Google, get $50,000 of practice money, buy
 
 ## Screenshots
 
-| Portfolio | Stock chart | Ask assistant |
-| --- | --- | --- |
-| ![Portfolio page showing holdings, cash and account value](docs/screenshots/portfolio.png) | ![Stock page with a price chart and range selector](docs/screenshots/stock-chart.png) | ![Ask assistant panel answering a question about a stock](docs/screenshots/ask-assistant.png) |
+| Portfolio | Activity history |
+| --- | --- |
+| ![Portfolio page showing account value, today's change and a value-over-time chart](docs/screenshots/portfolio.png) | ![Activity page listing every buy and sell, with realized gain or loss on each sale](docs/screenshots/activityHistory.png) |
+| **Stock chart** | **Ask assistant** |
+| ![Stock page with a price chart and range selector](docs/screenshots/stock-chart.png) | ![Ask assistant panel answering a question about a stock](docs/screenshots/ask-assistant.png) |
+
+*Activity history: every buy and sell in the append-only trade ledger, with the realized gain or loss on each sale.*
 
 ## Tech stack
 
