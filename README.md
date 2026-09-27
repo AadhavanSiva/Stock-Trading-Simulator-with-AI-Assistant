@@ -2,11 +2,44 @@
 
 [![Tests](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/AadhavanSiva/Stock-Trading-Simulator-with-AI-Assistant/actions/workflows/tests.yml)
 
+A paper-trading web app: sign in with Google, get $50,000 of practice money, buy and sell real US stocks at live market prices, and ask an AI assistant to explain any stock or your own portfolio. Built with Python, Flask and PostgreSQL, with the database itself enforcing the rules that keep the money honest.
+
+**Live demo:** `<RENDER_URL>`
+
+> The demo runs on Render's free tier, which sleeps when idle, so the first load can take up to a minute. After that it is quick.
+
+## Screenshots
+
+| Portfolio | Stock chart | Ask assistant |
+| --- | --- | --- |
+| ![Portfolio page showing holdings, cash and account value](docs/screenshots/portfolio.png) | ![Stock page with a price chart and range selector](docs/screenshots/stock-chart.png) | ![Ask assistant panel answering a question about a stock](docs/screenshots/ask-assistant.png) |
+
+## Tech stack
+
+- **Python 3.13** and **Flask**: server-rendered Jinja templates, plain CSS, no front-end build step
+- **PostgreSQL** via **psycopg2**, hosted on Neon in production
+- **Alpaca** market data API for prices, charts and company search
+- **Google Gemini** (`google-genai`) for the Ask research assistant
+- **Authlib** for Google sign-in (OpenID Connect)
+- **gunicorn** on **Render**
+- **pytest** and **GitHub Actions**, with a real PostgreSQL service, `pip-audit` and Dependabot
+
+## Highlights
+
+- **Money is exact and validated by the database.** Every money column is `NUMERIC`, never a float, with `CHECK` constraints that reject negative values and `NaN`. The `NaN` check is spelled out because PostgreSQL sorts `NaN` above every number, so `> 0` alone lets it through.
+- **An append-only trade ledger, enforced by a trigger.** A `BEFORE UPDATE OR DELETE` trigger refuses to rewrite any trade, so neither a bug nor a hand-typed `psql` session can alter the record. A correction is a new row.
+- **Buys and sells are single transactions with row locking.** Cash, shares and the trade log move together, and the balance or holding is re-checked under `SELECT ... FOR UPDATE`, so two simultaneous requests can't both spend the same money.
+- **Per-user unique constraints.** `UNIQUE (user_id, symbol)` makes one position per ticker per account a database guarantee rather than a convention. It is also what keeps one account's holding from colliding with another's.
+- **Hardened for the public internet.** CSRF tokens on every POST, a strict Content-Security-Policy with no inline scripts, Secure, HttpOnly and SameSite session cookies, and no internal error text on any page.
+- **1100+ tests in CI.** Every push runs the suite against a real PostgreSQL 16 database, with every external API mocked, plus a dependency vulnerability audit.
+
+## Design notes
+
 A Python + PostgreSQL paper-trading app: buy and sell real stocks at live market prices with practice money, then ask an AI research assistant about any stock or your own portfolio. Built as a hands-on project to practice relational database design, API integration, and secure data handling.
 
 It has two front ends — a terminal menu and a Flask web interface — sharing one set of models and one operations layer, so both behave identically. Accounts sign in with Google, and each one gets a $50,000 practice cash balance to trade with. The web app adds stock pages with 1D-to-all-time price charts and Ask, an assistant powered by Google's Gemini that is grounded in the app's own data and can research stocks with Google Search.
 
-## Features
+### Features
 
 - Pulls stock prices from Alpaca's market data API (IEX feed, delayed on the free plan)
 - Stores portfolio holdings and stock data in a PostgreSQL database with proper relational structure (foreign keys linking holdings to stock reference data)
@@ -34,7 +67,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - Account deletion that actually deletes: one transaction, a typed confirmation, and no orphaned rows left behind
 - A JSON export of an account's own data — profile, holdings and full trade history
 
-## Tech Stack
+### Tech Stack
 
 - **Python** — application logic, API integration
 - **PostgreSQL** — relational data storage
@@ -46,7 +79,7 @@ It has two front ends — a terminal menu and a Flask web interface — sharing 
 - **Google Gemini** (`google-genai`) — the Ask research assistant
 - **pytest** — test suite
 
-## Where the prices come from
+### Where the prices come from
 
 Market data is Alpaca's REST API, and `portfolio_tracker/services/market_data.py`
 is the only module that talks to it.
@@ -122,7 +155,7 @@ with `stocks.updated_at` named as the column to coordinate on.
   with corporate actions rather than seconds, so re-fetching it with every
   quote would double the request count for nothing.
 
-## Database Schema
+### Database Schema
 
 - `users` — one row per account: Google's `sub` claim, email, display name, cash balance, and the two leaderboard settings. `leaderboard_opt_in` defaults to `FALSE`, and a `CHECK` refuses an opted-in row with no `leaderboard_name` — otherwise the view would need a fallback, and the obvious fallback is the email address the feature exists to keep off the page.
 - `stocks` — reference data per ticker (symbol, company name, latest price, and the previous session's close), shared by all accounts. The close is written from the same quote as the price, because "today's change" is the difference between the two and taking them from separate lookups would measure across a window nobody asked for.
@@ -134,7 +167,7 @@ with `stocks.updated_at` named as the column to coordinate on.
 
 Money columns are `NUMERIC` and carry `CHECK` constraints that reject negative and `NaN` values. (PostgreSQL sorts `'NaN'::numeric` above every other numeric, so `shares > 0` alone does not exclude it — the constraints spell out `<> 'NaN'` explicitly.) This holds for the OHLC columns too, which had no such guard until migration 007: a single NaN close would have made `MAX(close)` return NaN and turned every high on the history page into NaN, with nothing on screen to say where it came from.
 
-## Architecture
+### Architecture
 
 ```
 portfolio_tracker/
@@ -167,7 +200,7 @@ handler or a CLI prompt. `operations.py` returns plain values and never prints o
 renders, which is what lets the terminal and the browser share it without either
 one bending to suit the other.
 
-## Design
+### Design
 
 The front end aims for the calm of a full-service broker rather than the
 urgency of a trading app: **numbers lead, and chrome recedes.** White panels
@@ -200,7 +233,7 @@ without WebGL, or under reduced motion. It stops rendering when the tab is
 hidden or the hero scrolls out of view. Three.js is pinned to r128 with a
 subresource-integrity hash and loads on that page only.
 
-## Stock pages and charts
+### Stock pages and charts
 
 Every ticker links to `/stock/<symbol>`: the live price, your position, and a
 price chart over 1D, 5D, 1M, 3M, 6M, 1Y or all time. Charts are inline SVG
@@ -219,7 +252,7 @@ database. "1 day" means the most recent trading session, so it still shows
 Friday's prices over a weekend. Long ranges are thinned to 720 drawn points,
 keeping each span's high and low; every printed figure uses the full series.
 
-## Assistant
+### Assistant
 
 A panel on every signed-in page answers questions about the stock you are
 looking at, or about your portfolio. It runs on Google's Gemini
@@ -245,7 +278,7 @@ API.
   offers Cancel after 45 seconds. Each failure (rate limit, not set up,
   refused, network) gets its own message and a way forward.
 
-### Setting it up
+#### Setting it up
 
 Add `GEMINI_API_KEY` to `.env` — create one at
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — and restart.
@@ -265,7 +298,7 @@ products and human reviewers may read it; a paid key does not use prompts
 that way. The assistant never sends your name or email, and the panel reminds
 people to leave personal details out of questions.
 
-### Google's display terms for searched answers
+#### Google's display terms for searched answers
 
 Answers that used Google Search come with Google's search-suggestion chips,
 which its terms require to be shown with the answer and left unmodified. They
@@ -273,7 +306,7 @@ are rendered exactly as returned, inside a sandboxed iframe (no scripts, and
 their CSS cannot reach the page). Source links point at the exact address
 Google returned, with no redirect or click tracking added.
 
-### How failures are handled
+#### How failures are handled
 
 - A search refused for quota (HTTP 429) is answered again without search, and
   search is paused for 15 minutes rather than refused on every question.
@@ -287,7 +320,7 @@ Google returned, with no redirect or click tracking added.
 With JavaScript off, the "Ask" button opens a plain page that does the same
 thing. The test suite blocks any real API call.
 
-## Motion
+### Motion
 
 Scroll-driven animation is done natively with CSS `animation-timeline: view()`
 and `scroll()`, behind `@supports`. Chrome and Edge run it in the compositor
@@ -311,7 +344,7 @@ landing and sign-in pages, `calm` on the portfolio, balance and history views
 where numbers are being read. Forms are deliberately excluded — nothing moves
 while you are filling one in.
 
-## Setup
+### Setup
 
 1. Clone the repo.
 
@@ -351,7 +384,7 @@ while you are filling one in.
 
    `.env` is git-ignored, and nothing above is ever hardcoded — it all arrives through `config.py`.
 
-### Setting up Google sign-in
+#### Setting up Google sign-in
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project.
 2. **APIs & Services → OAuth consent screen** → External. Add your own email under *Test users*, otherwise Google blocks the sign-in while the app is unverified.
@@ -422,7 +455,7 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    In debug mode `FLASK_SECRET_KEY` is optional; set it in `.env` to keep
    sessions and flash messages working across restarts.
 
-## Deploying (Render + Neon, free tiers)
+### Deploying (Render + Neon, free tiers)
 
 The app runs on a [Render](https://render.com) free web service with a
 [Neon](https://neon.tech) free PostgreSQL database. `render.yaml` describes
@@ -466,7 +499,7 @@ a minute is shared across the whole service, so a busy deploy can still hit
 it. When that happens the app says prices could not be fetched rather than
 showing an error page, and the log records that it was the rate limit.
 
-## Upgrading an existing database
+### Upgrading an existing database
 
 `schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so it will not alter tables that already exist. A database created before the one-row-per-symbol change needs migration 001:
 
@@ -539,7 +572,7 @@ only one of the two leaves a database that depends on which route it
 arrived by. `tests/test_schema_parity.py` builds one database each way and
 compares them down to the constraint definitions, so the two cannot drift.
 
-## Accounts and email
+### Accounts and email
 
 `users.google_sub` is the identity; `users.email` is a mutable attribute
 refreshed from Google on every sign-in. There is deliberately **no
@@ -572,13 +605,13 @@ deliberate:
   Google `sub` — so signing in locally with an address that already had an
   account silently forked it into two portfolios.
 
-## Security notes
+### Security notes
 
 - **CSRF tokens on every state-changing request.** Flask-WTF's `CSRFProtect` checks every POST: buying and selling (each step), refreshing prices, loading history, fetching chart data, the Ask page and its JSON endpoint, dev sign-in, and signing out. Forms carry a hidden `csrf_token`; the Ask panel sends the same token as an `X-CSRFToken` header. The Ask endpoint used to rely on accepting only JSON, which stops a plain cross-site HTML form but not every cross-site request, so it now needs the token too. A request without a valid token is refused with 400 before the route runs: no trade, no API call, nothing counted against the rate limit. Tokens are tied to the session and last as long as it does.
 - **Signing out is a POST.** A sign-out link could be triggered by any other site with an image tag. An old link to `/logout` now shows a page with a Sign out button instead.
 - **A fixed signing key in production.** See `FLASK_SECRET_KEY` under Setup.
 - **No internal error text reaches the page.** Unhandled errors get a friendly 500 page (or a JSON error for `/api/` routes). Failures from the market data provider or Google sign-in are shown as a plain explanation of what to do next. The real exception, with its traceback, goes to the server log.
-- **Market data failures are told apart rather than lumped together.** Alpaca's documented codes are handled individually: `401` for rejected credentials and `403` for a data plan that does not cover the request are logged as *configuration* problems, because they will not fix themselves on a retry; `429` logs the rate limit and what it is; `400` and `5xx` log Alpaca's own explanation. None of that text reaches the page — a reader gets one sentence saying to try again shortly. The status codes were taken from Alpaca's error table rather than assumed, because this project has twice been caught out by exactly that assumption: Gemini answers `400` for a bad key where `401` would be expected, and yfinance returned an empty frame for an outage where an exception would be.
+- **Market data failures are told apart rather than lumped together.** Alpaca's documented codes are handled individually: `401` for rejected credentials and `403` for a data plan that does not cover the request are logged as *configuration* problems, because they will not fix themselves on a retry; `429` logs the rate limit and what it is; `400` and `5xx` log Alpaca's own explanation. None of that text reaches the page — a reader gets one sentence saying to try again shortly. The status codes were taken from Alpaca's error table rather than assumed, because this project has twice been caught out by exactly that assumption: Gemini answers `400` for a bad key where `401` would be expected, and yfinance, the market data library this app used before Alpaca, returned an empty frame for an outage where an exception would be.
 - **An unconfigured install says so.** With no API keys set, a lookup explains that market data is not configured and points at `.env`, rather than telling someone to try again in a minute — which is the one thing that cannot possibly help.
 - **Market data calls are bounded.** Every call has an explicit connect and read timeout (`MARKET_QUOTE_TIMEOUT`, `MARKET_HISTORY_TIMEOUT`), and an outage raises an error instead of reporting "0 new days". Quotes for page views are cached for `QUOTE_CACHE_SECONDS` (30 by default); buying, selling and refreshing always fetch a fresh price.
 - **The assistant's rate limit is in the database** (20 questions per account per 10 minutes), so it survives restarts and holds across every worker process.
@@ -591,7 +624,7 @@ deliberate:
 - **`/healthz` says what is actually deployed.** Public, no database, no market data, no session: it has to answer while the database is asleep. It reports the commit SHA, whether market data and the assistant are configured, and nothing secret. It exists because every page that differs between releases sits behind sign-in, so a deploy could previously fail to happen with no way to tell from outside.
 - **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
 
-## Tests
+### Tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -602,7 +635,7 @@ Database tests run against a throwaway database (`portfolio_test` by default, ov
 
 GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
 
-## What I Gained from building this
+### What I Gained from building this
 
 This project was built to practice core backend and database concepts: relational schema design with foreign keys, safe SQL practices (parameterized queries), API integration with error handling, and secrets management — the kind of data-handling discipline expected in production code.
 
