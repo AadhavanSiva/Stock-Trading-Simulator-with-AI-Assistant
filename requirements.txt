@@ -3,7 +3,7 @@
 # to parse and carry price frames; nothing does that any more.
 requests==2.34.2
 psycopg2-binary==2.9.13
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 # zoneinfo needs this on Windows, which ships no timezone database
 tzdata==2026.4
 
