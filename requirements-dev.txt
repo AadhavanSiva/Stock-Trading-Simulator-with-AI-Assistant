@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# What running the tests needs, on top of the app itself. CI installs this
+# file; Render installs requirements.txt only.
+pytest==9.1.1

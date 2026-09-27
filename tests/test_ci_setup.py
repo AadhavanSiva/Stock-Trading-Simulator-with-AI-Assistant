@@ -51,9 +51,9 @@ class TestWorkflow:
     def test_pins_the_local_python_version(self):
         assert 'python-version: "3.13.15"' in self.workflow()
 
-    def test_installs_the_pinned_requirements_and_runs_pytest(self):
+    def test_installs_the_dev_requirements_and_runs_pytest(self):
         text = self.workflow()
-        assert "pip install -r requirements.txt" in text
+        assert "pip install -r requirements-dev.txt" in text
         assert "python -m pytest" in text
 
     def test_the_readme_badge_points_at_this_workflow(self):

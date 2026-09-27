@@ -135,3 +135,21 @@ class TestRenderBlueprint:
     def test_gunicorn_is_pinned(self):
         with open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8") as fh:
             assert re.search(r"^gunicorn==[\d.]+$", fh.read(), re.M)
+
+    def test_installs_only_the_runtime_requirements(self):
+        """Test tools stay out of the production build."""
+        assert "pip install -r requirements.txt " in self.blueprint()
+        assert "requirements-dev" not in self.blueprint()
+
+
+class TestRequirementsSplit:
+    def read(self, name):
+        with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_dev_requirements_build_on_the_runtime_ones(self):
+        assert self.read("requirements-dev.txt").splitlines()[0] == "-r requirements.txt"
+
+    def test_pytest_is_a_dev_requirement_only(self):
+        assert re.search(r"^pytest==[\d.]+$", self.read("requirements-dev.txt"), re.M)
+        assert not re.search(r"^pytest", self.read("requirements.txt"), re.M)
