@@ -22,7 +22,7 @@
                 {% endif %}
             </div>
             {% if answer.searches %}
-                <p class="searches">Searched Google for
+                <p class="searches">Searched the web for
                     {% for query in answer.searches %}<q>{{ query }}</q>{{ ', ' if not loop.last }}{% endfor %}
                 </p>
             {% endif %}
@@ -41,7 +41,7 @@
                 </div>
             {% endif %}
             {% if answer.suggestions_html %}
-                <iframe class="search-suggestions" title="Related Google searches"
+                <iframe class="search-suggestions" title="Related searches"
                         sandbox="{{ SUGGESTIONS_SANDBOX }}"
                         srcdoc="{{ answer.suggestions_html | suggestions_doc }}"></iframe>
             {% endif %}

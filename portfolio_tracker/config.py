@@ -124,7 +124,27 @@ def google_configured():
 
 # Opt-in local sign-in, for trying the app before wiring up Google. It is
 # OFF unless you set ALLOW_DEV_LOGIN=1, and the UI says plainly when it is on.
-ALLOW_DEV_LOGIN = os.getenv("ALLOW_DEV_LOGIN", "").strip() in ("1", "true", "yes")
+ALLOW_DEV_LOGIN = os.getenv("ALLOW_DEV_LOGIN", "").strip().lower() in ("1", "true", "yes")
+
+
+def check_dev_login(allow_dev_login, behind_https_proxy):
+    """Refuse to run with dev login switched on in a deployment.
+
+    Dev login lets anyone sign in as any email address. BEHIND_HTTPS_PROXY
+    is only set when the app is deployed, so the two together mean a public
+    server that anyone can take any account on. Failing at startup makes
+    that impossible to miss, where a warning in a log would not be.
+    """
+    if allow_dev_login and behind_https_proxy:
+        raise ConfigurationError(
+            "ALLOW_DEV_LOGIN is set on a deployed server (BEHIND_HTTPS_PROXY is "
+            "also set). Dev login lets anyone sign in as any email address, so "
+            "it must never run in production. Remove ALLOW_DEV_LOGIN from the "
+            "server's environment, then start the app again."
+        )
+
+
+check_dev_login(ALLOW_DEV_LOGIN, BEHIND_HTTPS_PROXY)
 
 # Which account the terminal interface acts as. The CLI cannot run a browser
 # redirect, so it reads the account from here instead.

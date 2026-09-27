@@ -296,11 +296,12 @@ class TestSearchUnavailableFallback:
         assert fake.calls[2]["config"].tools
         assert answer.notice == "" and answer.sources
 
-    def test_a_real_rate_limit_on_both_attempts_is_busy(self):
+    def test_a_real_rate_limit_on_both_attempts_is_unavailable(self):
         fake = SequenceClient(quota_error(), quota_error())
         with using(fake):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "busy" and len(fake.calls) == 2
+        assert answer.kind == "unavailable" and len(fake.calls) == 2
+        assert answer.message == assistant.QUOTA_MESSAGE
 
     def test_other_errors_are_not_retried(self):
         bad_key = errors.ClientError(400, {"error": {
@@ -309,14 +310,14 @@ class TestSearchUnavailableFallback:
         fake = SequenceClient(bad_key)
         with using(fake):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "not_configured" and len(fake.calls) == 1
+        assert answer.kind == "unavailable" and len(fake.calls) == 1
 
-    def test_with_search_switched_off_a_429_is_simply_busy(self, monkeypatch):
+    def test_with_search_switched_off_a_429_is_simply_unavailable(self, monkeypatch):
         monkeypatch.setattr(config, "ASSISTANT_SEARCH", False)
         fake = SequenceClient(quota_error())
         with using(fake):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "busy" and len(fake.calls) == 1
+        assert answer.kind == "unavailable" and len(fake.calls) == 1
         assert answer.notice == ""
 
     def test_a_successful_search_carries_no_notice(self):
@@ -396,7 +397,7 @@ class TestSearchQueries:
     def test_the_page_shows_the_queries_without_javascript(self, client):
         with using(FakeClient(self.reply_with_queries(["apple <b>news</b>"]))), quote():
             body = client.post("/assistant", data={"question": "q", "symbol": "AAPL"}).get_data(as_text=True)
-        assert "Searched Google for" in body
+        assert "Searched the web for" in body
         assert "<q>apple &lt;b&gt;news&lt;/b&gt;</q>" in body
 
 

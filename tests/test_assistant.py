@@ -172,59 +172,50 @@ class TestAnswers:
 
 
 class TestFailures:
-    def test_missing_key_explains_the_setup(self):
+    """The reader sees one of two generic messages; the detail goes to the log."""
+
+    def test_missing_key_is_unavailable_and_logs_the_setup_hint(self, caplog):
         """google-genai raises ValueError when the client is created without a key."""
         with patch.object(assistant, "_get_client", side_effect=ValueError("No API key was provided.")):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "not_configured"
-        assert "GEMINI_API_KEY" in answer.message
-        assert "aistudio.google.com" in answer.message
+        assert answer.kind == "unavailable" and answer.message == assistant.UNAVAILABLE_MESSAGE
+        assert "GEMINI_API_KEY" in caplog.text
 
-    def test_an_invalid_key_is_not_mistaken_for_a_bad_question(self):
+    def test_an_invalid_key_logs_the_setting_to_check(self, caplog):
         """Gemini reports a bad key as 400 INVALID_ARGUMENT, not 401."""
         error = client_error(400, "API key not valid. Please pass a valid API key.",
                              reason="API_KEY_INVALID")
         with using(FakeClient(error=error)):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "not_configured"
-        assert "rephras" not in answer.message
-        assert "GEMINI_API_KEY" in answer.message
+        assert answer.kind == "unavailable"
+        assert "GEMINI_API_KEY" in caplog.text
 
-    def test_an_ordinary_bad_request_suggests_rephrasing(self):
-        with using(FakeClient(error=client_error(400, "Invalid contents"))):
+    @pytest.mark.parametrize("code", [400, 401, 403, 404])
+    def test_client_errors_are_unavailable(self, code):
+        with using(FakeClient(error=client_error(code))):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "failed" and "rephras" in answer.message
+        assert answer.kind == "unavailable" and answer.message == assistant.UNAVAILABLE_MESSAGE
 
-    @pytest.mark.parametrize("code", [401, 403])
-    def test_permission_problems_point_at_the_key(self, code):
-        with using(FakeClient(error=client_error(code, status="PERMISSION_DENIED"))):
-            assert assistant.ask("ctx", "q").kind == "not_configured"
-
-    def test_an_unknown_model_names_the_setting_to_change(self):
+    def test_an_unknown_model_is_named_in_the_log_only(self, caplog):
         with using(FakeClient(error=client_error(404, status="NOT_FOUND"))):
             answer = assistant.ask("ctx", "q")
-        assert "ASSISTANT_MODEL" in answer.message and "gemini-3.8-flash" in answer.message
+        assert "gemini-3.8-flash" not in answer.message
+        assert "ASSISTANT_MODEL" in caplog.text and "gemini-3.8-flash" in caplog.text
 
-    def test_quota_exhaustion_is_busy(self):
+    def test_quota_exhaustion_says_high_demand(self):
         with using(FakeClient(error=client_error(429, status="RESOURCE_EXHAUSTED"))):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "busy" and "limit" in answer.message
+        assert answer.kind == "unavailable" and answer.message == assistant.QUOTA_MESSAGE
 
-    def test_server_errors_say_to_try_later(self):
-        with using(FakeClient(error=server_error(503))):
+    @pytest.mark.parametrize("error", [
+        server_error(503), server_error(500),
+        httpx.ConnectTimeout("timed out"), httpx.ConnectError("boom"),
+        RuntimeError("unexpected"),
+    ], ids=["503", "500", "timeout", "network", "unexpected"])
+    def test_other_failures_are_unavailable(self, error):
+        with using(FakeClient(error=error)):
             answer = assistant.ask("ctx", "q")
-        assert answer.kind == "failed" and "few minutes" in answer.message
-
-    def test_timeout_is_not_mistaken_for_a_network_outage(self):
-        """httpx.TimeoutException is itself a RequestError; order matters."""
-        with using(FakeClient(error=httpx.ConnectTimeout("timed out"))):
-            message = assistant.ask("ctx", "q").message
-        assert "took too long" in message and "internet" not in message
-
-    def test_network_failure_is_reported(self):
-        """These arrive as raw httpx errors, not google.genai APIError."""
-        with using(FakeClient(error=httpx.ConnectError("boom"))):
-            assert "internet connection" in assistant.ask("ctx", "q").message
+        assert answer.kind == "unavailable" and answer.message == assistant.UNAVAILABLE_MESSAGE
 
     def test_no_failure_message_leaks_internals(self):
         for error in (client_error(400), client_error(429), server_error(500),
@@ -334,11 +325,11 @@ class TestRoutes:
         sent = fake.calls[0]["contents"]
         assert "$0.01" not in sent and "9999999" not in sent and "$332.27" in sent
 
-    def test_setup_problem_returns_503_with_guidance(self, client):
+    def test_setup_problem_returns_a_generic_503(self, client):
         with patch.object(assistant, "_get_client", side_effect=ValueError("No API key")):
             response = self.post(client, question="q")
         assert response.status_code == 503
-        assert "GEMINI_API_KEY" in response.get_json()["message"]
+        assert response.get_json()["message"] == assistant.UNAVAILABLE_MESSAGE
 
     def test_rate_limited_per_account(self, client, monkeypatch):
         monkeypatch.setattr(web_module, "ASSISTANT_LIMIT", 2)
@@ -359,16 +350,17 @@ class TestRoutes:
 
 
 class TestDisclosure:
-    """Questions go to Google. On a free key Google may use them to improve
-    its products and people may read them, so the panel says so."""
+    """Questions go to a third-party provider that may use them to improve
+    its products and whose staff may read them, so the panel says so,
+    without naming the provider."""
 
-    def test_drawer_says_questions_go_to_google(self, client):
-        body = text(client.get("/buy"))
-        assert "Google" in body and "personal" in body
+    def test_drawer_says_questions_leave_the_app(self, client):
+        body = " ".join(text(client.get("/buy")).split())
+        assert "third-party AI provider" in body and "personal" in body
 
-    def test_full_page_says_questions_go_to_google(self, client):
-        body = text(client.get("/assistant"))
-        assert "Google" in body and "personal" in body
+    def test_full_page_says_questions_leave_the_app(self, client):
+        body = " ".join(text(client.get("/assistant")).split())
+        assert "third-party AI provider" in body and "personal" in body
 
 
 class TestDrawer:

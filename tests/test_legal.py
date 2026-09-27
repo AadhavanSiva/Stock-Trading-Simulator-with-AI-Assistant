@@ -45,8 +45,15 @@ class TestTheyAreMarkedAsDrafts:
         assert "has not been written or reviewed by a lawyer" in body
 
     @pytest.mark.parametrize("path", PAGES)
-    def test_it_says_review_is_needed_before_deployment(self, anonymous, path):
-        assert "needs professional review" in prose(anonymous.get(path))
+    def test_it_says_what_kind_of_project_this_is(self, anonymous, path):
+        body = prose(anonymous.get(path))
+        assert "personal, educational project" in body
+        assert "simulated money only" in body
+
+    @pytest.mark.parametrize("path", PAGES)
+    def test_it_no_longer_implies_the_app_is_not_yet_public(self, anonymous, path):
+        """The app is deployed; the banner must not say it is waiting to be."""
+        assert "before this application is deployed" not in prose(anonymous.get(path))
 
     def test_the_template_carries_the_warning_in_a_comment(self):
         """For whoever opens the file rather than the page."""
