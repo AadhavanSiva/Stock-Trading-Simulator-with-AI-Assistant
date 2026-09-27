@@ -278,8 +278,11 @@ API.
   lists the Google searches it ran and its sources, and the panel's "What Ask
   can see" list names exactly what is sent. While waiting, the panel says what
   is happening by elapsed time (searching only when search is available) and
-  offers Cancel after 45 seconds. Each failure (rate limit, not set up,
-  refused, network) gets its own message and a way forward.
+  offers Cancel after 45 seconds. Failures the reader can do something about
+  get their own message and a way forward: the per-account limit (with a
+  countdown), a refused question, a lost connection. Anything wrong on the AI
+  provider's side gets one generic "high demand" or "temporarily unavailable"
+  message (see "How failures are handled").
 
 #### Setting it up
 
