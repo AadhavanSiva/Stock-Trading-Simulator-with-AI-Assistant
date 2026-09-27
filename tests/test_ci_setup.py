@@ -51,6 +51,12 @@ class TestWorkflow:
     def test_pins_the_local_python_version(self):
         assert 'python-version: "3.13.15"' in self.workflow()
 
+    def test_audits_the_dependencies_for_known_vulnerabilities(self):
+        text = self.workflow()
+        assert "python -m pip_audit -r requirements-dev.txt" in text
+        with open(os.path.join(ROOT, "requirements-dev.txt"), encoding="utf-8") as fh:
+            assert re.search(r"^pip-audit==[\d.]+$", fh.read(), re.M)
+
     def test_installs_the_dev_requirements_and_runs_pytest(self):
         text = self.workflow()
         assert "pip install -r requirements-dev.txt" in text
@@ -61,3 +67,18 @@ class TestWorkflow:
             readme = fh.read()
         first_lines = "\n".join(readme.splitlines()[:5])
         assert "actions/workflows/tests.yml/badge.svg" in first_lines
+
+
+class TestDependabot:
+    def config(self):
+        with open(os.path.join(ROOT, ".github", "dependabot.yml"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_updates_pip_and_github_actions_weekly(self):
+        text = self.config()
+        for ecosystem in ("pip", "github-actions"):
+            block = re.search(
+                rf"package-ecosystem: {ecosystem}\n(.*?)(?=\n\s*- package-ecosystem|\Z)",
+                text.replace("\r\n", "\n"), re.S)
+            assert block, ecosystem
+            assert "interval: weekly" in block.group(1), ecosystem

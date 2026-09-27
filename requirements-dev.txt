@@ -3,3 +3,7 @@
 # What running the tests needs, on top of the app itself. CI installs this
 # file; Render installs requirements.txt only.
 pytest==9.1.1
+
+# Supply-chain check: CI fails if any pinned package, or anything they pull
+# in, has a known vulnerability.
+pip-audit==2.10.1

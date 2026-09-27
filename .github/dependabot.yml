@@ -1,0 +1,14 @@
+# Weekly pull requests for outdated or vulnerable dependencies. Each one
+# runs the Tests workflow, including its pip-audit step, before merging.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"          # requirements.txt and requirements-dev.txt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"          # .github/workflows/
+    schedule:
+      interval: weekly

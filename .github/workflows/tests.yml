@@ -60,3 +60,10 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+      # After the tests, and run even when they fail, so one run reports
+      # both. Resolves requirements-dev.txt (which includes requirements.txt)
+      # with every transitive dependency and fails on any known vulnerability.
+      - name: Audit dependencies
+        if: ${{ !cancelled() }}
+        run: python -m pip_audit -r requirements-dev.txt
