@@ -29,9 +29,16 @@ from portfolio_tracker.services import assistant, market_data
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# `python web.py` is a local debug run: the Werkzeug debugger and a
+# throwaway signing key. Never in production, where the debugger would run
+# arbitrary code for anyone who could reach it; there the same command runs
+# without debug and needs a real FLASK_SECRET_KEY like any other start.
+LOCAL_DEBUG_RUN = __name__ == "__main__" and config.ENVIRONMENT != "production"
+
 # Required unless this is a debug run: `flask run --debug` (FLASK_DEBUG=1,
-# which Flask reads into app.debug) or `python web.py`, which runs in debug.
-app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or __name__ == "__main__")
+# which Flask reads into app.debug) or a local `python web.py`.
+app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or LOCAL_DEBUG_RUN)
 
 # Every POST, including the JSON Ask endpoint, must carry a CSRF token tied
 # to the session: a hidden field in forms, an X-CSRFToken header from
@@ -1294,4 +1301,4 @@ def server_error(error):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=LOCAL_DEBUG_RUN)

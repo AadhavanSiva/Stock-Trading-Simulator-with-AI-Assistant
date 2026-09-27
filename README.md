@@ -655,7 +655,7 @@ python -m pytest
 
 Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. Market data and Gemini are both mocked. The market data guard is installed on the HTTP session itself rather than on named functions, so a request to an endpoint added later is caught without anyone remembering to extend it; a test that reaches the real API fails loudly rather than quietly passing.
 
-GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
+GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping. The same workflow runs `pip-audit` against the pinned dependencies and `bandit` against the app's own code, and fails on any known vulnerability or finding; the few `bandit` false positives are marked inline with `# nosec` and the reason.
 
 ### What I Gained from building this
 

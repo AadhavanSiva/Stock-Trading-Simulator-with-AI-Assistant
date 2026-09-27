@@ -41,16 +41,25 @@ def record(cur, user_id, symbol, side, shares, price, total_value, cost_basis=No
 
 # ------------------------------------------------------------------ reading
 
-def _select(where, params, limit=None, offset=None):
-    sql = f"""
+def _select(user_id, symbol=None, limit=None, offset=None):
+    """One account's trades, optionally in one ticker, newest first.
+
+    Takes values rather than a WHERE clause, and builds the query only from
+    fixed fragments, so no caller can put SQL of its own into it.
+    """
+    sql = """
         SELECT trades.id, trades.symbol, stocks.company_name, trades.side,
                trades.shares, trades.price, trades.total_value,
                trades.cost_basis, trades.backfilled, trades.traded_at
         FROM trades
         LEFT JOIN stocks ON stocks.symbol = trades.symbol
-        WHERE {where}
-        ORDER BY trades.traded_at DESC, trades.id DESC
+        WHERE trades.user_id = %s
     """
+    params = (user_id,)
+    if symbol is not None:
+        sql += " AND trades.symbol = %s"
+        params += (symbol,)
+    sql += " ORDER BY trades.traded_at DESC, trades.id DESC"
     if limit is not None:
         sql += " LIMIT %s OFFSET %s"
         params = params + (limit, offset or 0)
@@ -61,7 +70,7 @@ def _select(where, params, limit=None, offset=None):
 
 def recent(user_id, limit=5):
     """The newest trades, for the portfolio page's activity section."""
-    return _select("trades.user_id = %s", (user_id,), limit=limit, offset=0)
+    return _select(user_id, limit=limit, offset=0)
 
 
 def page(user_id, page_number=1, page_size=PAGE_SIZE):
@@ -72,10 +81,7 @@ def page(user_id, page_number=1, page_size=PAGE_SIZE):
     count() separately when it needs the total.
     """
     page_number = max(1, int(page_number))
-    return _select(
-        "trades.user_id = %s", (user_id,),
-        limit=page_size, offset=(page_number - 1) * page_size,
-    )
+    return _select(user_id, limit=page_size, offset=(page_number - 1) * page_size)
 
 
 def count(user_id):
@@ -86,9 +92,7 @@ def count(user_id):
 
 def for_symbol(user_id, symbol):
     """Every trade in one ticker, newest first."""
-    return _select(
-        "trades.user_id = %s AND trades.symbol = %s", (user_id, symbol.upper()),
-    )
+    return _select(user_id, symbol=symbol.upper())
 
 
 # --------------------------------------------------------- realized gains

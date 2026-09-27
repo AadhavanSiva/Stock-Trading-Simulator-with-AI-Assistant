@@ -67,3 +67,10 @@ jobs:
       - name: Audit dependencies
         if: ${{ !cancelled() }}
         run: python -m pip_audit -r requirements-dev.txt
+
+      # Static security scan of the app's own code (not the tests, which are
+      # built on assert). Fails on any finding; a false positive is marked
+      # inline with "# nosec <test id> - <why>" rather than skipped here.
+      - name: Scan code with bandit
+        if: ${{ !cancelled() }}
+        run: python -m bandit -r portfolio_tracker web.py main.py
