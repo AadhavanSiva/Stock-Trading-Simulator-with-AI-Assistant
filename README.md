@@ -419,7 +419,7 @@ while you are filling one in.
 
 The sign-in page tells you all of this, with your actual redirect URI filled in, whenever the credentials are missing.
 
-**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done. The app refuses to start if it is set together with `BEHIND_HTTPS_PROXY`, so it cannot be left on in a deployment.
+**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done. The app refuses to start if it is set together with `ENVIRONMENT=production` or `BEHIND_HTTPS_PROXY`, so it cannot be left on in a deployment.
 
 5. Run whichever interface you prefer — they share the same database and logic.
 
@@ -498,6 +498,9 @@ the service, so Render needs no hand-entered build settings.
 What the Blueprint sets and why:
 
 - **Python 3.13.15**, as in CI. Local, CI and production all naming one version is what makes a green CI run mean anything about production.
+- **`ENVIRONMENT=production`.** Says what the server is for, so
+  production-only safety checks stay on however requests reach it. The app
+  refuses to start with dev login enabled in production.
 - **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
   HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
   `ProxyFix`) to build `https://` links, and marks the session cookie

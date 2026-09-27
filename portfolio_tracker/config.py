@@ -31,6 +31,13 @@ SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "").strip() or None
 # front, anyone could send those headers.
 BEHIND_HTTPS_PROXY = os.getenv("BEHIND_HTTPS_PROXY", "").strip().lower() in ("1", "true", "yes")
 
+# Which kind of deployment this is: "production" on the live server,
+# anything else (the default is "development") locally. It says what the
+# server is for, where BEHIND_HTTPS_PROXY only says how requests reach it,
+# so production-only safety checks key on this and stay on even if the
+# proxy setting is changed or dropped.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower() or "development"
+
 
 class ConfigurationError(RuntimeError):
     """A setting the app cannot safely run without is missing."""
@@ -127,15 +134,26 @@ def google_configured():
 ALLOW_DEV_LOGIN = os.getenv("ALLOW_DEV_LOGIN", "").strip().lower() in ("1", "true", "yes")
 
 
-def check_dev_login(allow_dev_login, behind_https_proxy):
+def check_dev_login(allow_dev_login, behind_https_proxy, environment="development"):
     """Refuse to run with dev login switched on in a deployment.
 
-    Dev login lets anyone sign in as any email address. BEHIND_HTTPS_PROXY
-    is only set when the app is deployed, so the two together mean a public
-    server that anyone can take any account on. Failing at startup makes
-    that impossible to miss, where a warning in a log would not be.
+    Dev login lets anyone sign in as any email address, so on a public
+    server anyone could take any account. Two independent signals mean
+    "deployed", and either one is enough to refuse: ENVIRONMENT=production,
+    which says so directly, and BEHIND_HTTPS_PROXY, which is only set when
+    the app is deployed. Failing at startup makes the mistake impossible to
+    miss, where a warning in a log would not be.
     """
-    if allow_dev_login and behind_https_proxy:
+    if not allow_dev_login:
+        return
+    if environment == "production":
+        raise ConfigurationError(
+            "ALLOW_DEV_LOGIN is set but ENVIRONMENT is production. Dev login "
+            "lets anyone sign in as any email address, so it must never run in "
+            "production. Remove ALLOW_DEV_LOGIN from the server's environment, "
+            "then start the app again."
+        )
+    if behind_https_proxy:
         raise ConfigurationError(
             "ALLOW_DEV_LOGIN is set on a deployed server (BEHIND_HTTPS_PROXY is "
             "also set). Dev login lets anyone sign in as any email address, so "
@@ -144,7 +162,7 @@ def check_dev_login(allow_dev_login, behind_https_proxy):
         )
 
 
-check_dev_login(ALLOW_DEV_LOGIN, BEHIND_HTTPS_PROXY)
+check_dev_login(ALLOW_DEV_LOGIN, BEHIND_HTTPS_PROXY, ENVIRONMENT)
 
 # Which account the terminal interface acts as. The CLI cannot run a browser
 # redirect, so it reads the account from here instead.

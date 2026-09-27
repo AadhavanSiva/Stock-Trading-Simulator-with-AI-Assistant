@@ -19,6 +19,8 @@ services:
       # three is what makes CI's result mean anything about production.
       - key: PYTHON_VERSION
         value: 3.13.15
+      - key: ENVIRONMENT
+        value: production
       - key: BEHIND_HTTPS_PROXY
         value: "1"
       - key: FLASK_SECRET_KEY
