@@ -4,7 +4,7 @@
 
 A paper-trading web app: sign in with Google, get $50,000 of practice money, buy and sell real US stocks at live market prices, and ask an AI assistant to explain any stock or your own portfolio. Built with Python, Flask and PostgreSQL, with the database itself enforcing the rules that keep the money honest.
 
-**Live demo:** `<RENDER_URL>`
+**Live demo:** https://stock-trading-simulator-3tyh.onrender.com/
 
 > The demo runs on Render's free tier, which sleeps when idle, so the first load can take up to a minute. After that it is quick.
 
@@ -221,9 +221,12 @@ served from `static/fonts/` (SIL Open Font License), not a font CDN.
   use a separate, darker border that meets the 3:1 minimum.
 - **Light and dark themes** follow the operating system setting.
 
-The dashboard leads with four figures (account value, investments, total gain
-or loss, cash), then holdings beside an allocation list. There is no "today's
-change" figure yet: the app does not store a previous close.
+The dashboard leads with six figures (account value, investments, total gain
+or loss, today's change, return against the starting balance, and cash), then
+the value-over-time chart, holdings beside an allocation list, and recent
+activity. Today's change is measured against the previous close stored with
+each price; until one has been recorded, the figure says "Not known yet"
+rather than showing a zero.
 
 The landing page carries one WebGL scene, a drifting point field whose colours
 come from the stylesheet, with all geometry generated in `static/hero.js`. It
@@ -312,10 +315,19 @@ Google returned, with no redirect or click tracking added.
   search is paused for 15 minutes rather than refused on every question.
 - Temporary server errors (Gemini's "high demand" 503s) are retried twice with
   short backoff before the reader sees anything.
-- An invalid key — which Gemini reports as HTTP 400, not 401 — is recognised
-  and explained; so are a missing key, an unknown model and network failures.
+- Every other provider failure reaches the reader as one of two generic
+  messages, with HTTP 503, and never names the provider, the model or the raw
+  error. Quota exhaustion says the assistant is taking a quick break due to
+  high demand; everything else (a missing or rejected key, an unknown model,
+  timeouts, server errors, network failures, an unreadable response) says it
+  is temporarily unavailable.
+- The detail goes to the server log instead: the error type, a UTC timestamp,
+  the message and traceback, and a hint about what to check. That is where an
+  invalid key is still recognised, although Gemini reports it as HTTP 400
+  rather than 401. The API key is redacted before anything is logged.
 - Refused or safety-blocked answers are withheld rather than shown partially.
-- Each account is limited to 20 questions per 10 minutes.
+- Each account is limited to 20 questions per 10 minutes; going over returns
+  HTTP 429 with a `Retry-After` and a countdown in the panel.
 
 With JavaScript off, the "Ask" button opens a plain page that does the same
 thing. The test suite blocks any real API call.
