@@ -8,12 +8,14 @@
    jurisdiction, company or deployment. Anything that turns on where you
    or your users are — consumer protection, data protection obligations,
    the rules about simulated trading and financial promotions, limitation
-   of liability, the governing-law clause — is exactly the part that needs
-   professional review before this is published anywhere real.
+   of liability, the governing-law clause — is exactly the part a lawyer
+   would need to review.
 
-   The banner below says the same thing to the reader. It is deliberately
-   not a subtle one, and it should be removed only at the point the
-   documents behind it have actually been reviewed. #}
+   The app is public as a personal, educational project that uses
+   simulated money only. The banner below tells the reader that, and that
+   these documents are unreviewed. It is deliberately not a subtle one,
+   and it should be removed only at the point the documents behind it
+   have actually been reviewed. #}
 
 {% macro draft_notice(what) -%}
     <div class="draft-notice" role="note">
@@ -24,10 +26,10 @@
             is not tailored to any jurisdiction.
         </p>
         <p>
-            It is here so the project has something accurate to point at while
-            it is a personal project, and so the shape of the thing exists.
-            It needs professional review before this application is deployed
-            publicly or used by anyone other than its author.
+            Portfolio Tracker is a personal, educational project. It uses
+            simulated money only: no real money is deposited, traded or paid
+            out. This {{ what }} is here so the project has something accurate
+            to point at.
         </p>
     </div>
 {%- endmacro %}
