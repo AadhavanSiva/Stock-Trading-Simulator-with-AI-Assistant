@@ -16,4 +16,4 @@ Authlib==1.8.0
 gunicorn==23.0.0
 
 # AI assistant
-google-genai==2.23.0
+google-genai==2.25.0
