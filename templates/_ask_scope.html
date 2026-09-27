@@ -1,4 +1,4 @@
-{# What goes to Gemini with each question. Keep in step with
+{# What goes to the AI provider with each question. Keep in step with
    operations.assistant_context(): this is a promise to the reader. #}
 <div class="ask-scope-body">
     <h3>From your account</h3>
@@ -15,7 +15,7 @@
     <h3>From the web</h3>
     <ul>
         <li>
-            Google Search, for news, earnings and company background{% if not assistant_research %}.
+            Web search, for news, earnings and company background{% if not assistant_research %}.
             Off right now, so answers use only your account data and can't
             include recent news{% endif %}
         </li>

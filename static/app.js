@@ -498,7 +498,7 @@
         var busy = false;
         var opener = null;
 
-        // A restored answer keeps its sources and Google's suggestions: the
+        // A restored answer keeps its sources and search suggestions: the
         // terms require the suggestions to accompany a searched answer
         // whenever it is shown, not just the first time.
         transcript.forEach(function (turn) {
@@ -651,11 +651,11 @@
         }
 
         /* Where the answer came from: the searches it ran, its sources, and
-         * Google Search suggestions. Suggestions are Google's own HTML,
-         * shown unmodified as its terms require, inside a sandboxed iframe:
-         * no scripts, and its CSS can't touch this page. Source links go
-         * straight to the address Google gave, and only http(s) addresses
-         * are ever made into links. */
+         * search suggestions. Suggestions are the search provider's own
+         * HTML, shown unmodified as its terms require, inside a sandboxed
+         * iframe: no scripts, and its CSS can't touch this page. Source links
+         * go straight to the address the provider gave, and only http(s)
+         * addresses are ever made into links. */
         function grounding(container, sources, suggestions, searches) {
             sources = (sources || []).filter(function (src) {
                 return src && /^https?:\/\//i.test(String(src.uri || ""));
@@ -672,7 +672,7 @@
             box.appendChild(head);
 
             if (searches.length) {
-                var searched = el("p", "searches", "Searched Google for ");
+                var searched = el("p", "searches", "Searched the web for ");
                 searches.forEach(function (query, i) {
                     if (i) searched.appendChild(document.createTextNode(", "));
                     searched.appendChild(el("q", "", query));
@@ -703,7 +703,7 @@
             if (suggestions) {
                 var frame = document.createElement("iframe");
                 frame.className = "search-suggestions";
-                frame.title = "Related Google searches";
+                frame.title = "Related searches";
                 frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
                 frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8">'
                     + '<base target="_blank"></head><body style="margin:0">'
@@ -744,7 +744,7 @@
         var TITLES = {
             invalid: "Check your question",
             busy: "Ask needs a short break",
-            not_configured: "Ask isn't available on this server",
+            unavailable: "Ask is temporarily unavailable",
             disabled: "Ask is switched off",
             refused: "Ask can't help with that one",
             failed: "Ask couldn't answer that",
@@ -881,7 +881,7 @@
                 body: JSON.stringify({
                     question: question,
                     symbol: symbol,
-                    // Only the words go back; sources and Google's HTML stay here.
+                    // Only the words go back; sources and suggestion HTML stay here.
                     earlier: transcript.slice(-3).map(function (turn) {
                         return { question: turn.question, answer: turn.answer };
                     })

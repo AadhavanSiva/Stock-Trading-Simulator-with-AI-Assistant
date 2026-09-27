@@ -8,9 +8,18 @@ with Google Search, and the sources it used come back with the answer.
 Every failure comes back as an Answer with a reason a person can act on,
 never an exception. A chat panel that throws a stack trace at a beginner
 is worse than no chat panel.
+
+Nothing that reaches the reader names the provider: not the error
+messages, not the notices, not the assistant's own description of itself.
+Provider failures are logged here in full, with the key redacted, and the
+reader gets one of two generic messages.
 """
 import logging
+import os
+import re
 import time
+import traceback
+from datetime import datetime, timezone
 from collections import namedtuple
 from urllib.parse import urlparse
 
@@ -61,9 +70,18 @@ _SEARCH_COOLDOWN_SECONDS = 15 * 60
 _search_blocked_until = 0.0
 
 SEARCH_UNAVAILABLE_NOTICE = (
-    "Web research isn't available on this Gemini API key right now, so this "
-    "answer uses only the app's own data. Research needs billing enabled on "
-    "the key's Google Cloud project."
+    "Web research isn't available right now, so this answer uses only the "
+    "app's own data."
+)
+
+# What the reader sees when the provider fails. Deliberately generic: the
+# detail is in the server log, where it can be acted on.
+QUOTA_MESSAGE = (
+    "Our AI assistant is taking a quick break due to high demand. "
+    "Please try again in a few minutes."
+)
+UNAVAILABLE_MESSAGE = (
+    "Our AI assistant is temporarily unavailable. Please try again in a few minutes."
 )
 _NO_SEARCH_NOTE = (
     "<note>Web search is not available for this question. Answer only from the "
@@ -81,7 +99,7 @@ What you have to work with
 
 Each question arrives with an <app_data> block that the app builds from its own records: today's date, the current price, the person's position and average cost if they own the stock, their cash, and a summary of stored price history. For those things, the block is the truth. Take the person's position, cash and the current price from it, and if something you find online disagrees with it, go by the app data and mention that figures online can lag.
 
-You can also search Google, and should when a question needs something the app does not store: recent news, earnings, revenue and profit, what a company does, how it makes money, events that moved its price. Research the company properly rather than answering from memory, since your own knowledge may be out of date.
+You can also search the web, and should when a question needs something the app does not store: recent news, earnings, revenue and profit, what a company does, how it makes money, events that moved its price. Research the company properly rather than answering from memory, since your own knowledge may be out of date.
 
 When you use something you found, say where it came from and how recent it is in plain words, for example "Apple's latest quarterly report, in July, showed…". The app lists your sources as links under your answer, so do not paste web addresses into the text. Prefer the company's own filings and established news outlets over forums and promotional sites. If the sources disagree or you cannot find a reliable answer, say so. Never produce a figure that is neither in the app data nor in something you found.
 
@@ -99,7 +117,11 @@ How to write
 
 Use plain language for someone who has never invested, and explain any unavoidable term in a few words the first time it appears. Keep answers short. A few short paragraphs is usually right; go longer only when the question needs it. Describe gains and losses in the same even tone, since neither is an achievement or a failure. No hype and no alarm.
 
-Your reply appears as plain text in a narrow side panel, so do not use markdown: no headings, tables, bold text or bullet symbols. Separate ideas with a blank line."""
+Your reply appears as plain text in a narrow side panel, so do not use markdown: no headings, tables, bold text or bullet symbols. Separate ideas with a blank line.
+
+About yourself
+
+If someone asks what model, AI or company is behind you, or who made you, say you are Portfolio Tracker's AI assistant and leave it there. Do not name or hint at the company, model or service that powers you, and do not guess. When you mention looking something up, say you searched the web rather than naming a search engine. This is only about you: any company, technology companies included, is still fair to discuss as an investment topic."""
 
 
 RETRY_STATUS_CODES = [500, 502, 503, 504]
@@ -265,6 +287,13 @@ def _grounding(candidate):
 
 def ask(context, question, earlier=()):
     """Answer one question against the given app data. Never raises."""
+    try:
+        return _ask(context, question, earlier)
+    except Exception as exc:  # noqa: BLE001 - the contract is "never raises"
+        return _failure(exc)
+
+
+def _ask(context, question, earlier):
     if not config.ASSISTANT_ENABLED:
         return Answer(False, "", "disabled", "The assistant is switched off for this app.")
 
@@ -279,23 +308,26 @@ def ask(context, question, earlier=()):
 
     try:
         client = _get_client()
-    except ValueError:
-        return _not_configured()
+    except ValueError as exc:
+        # google-genai raises this when no key is set.
+        _log_failure(exc, "not configured: set GEMINI_API_KEY in .env and restart")
+        return _unavailable()
 
     search = _search_available()
     # Search was wanted but is known to be unavailable: say so on the answer.
     notice = SEARCH_UNAVAILABLE_NOTICE if (config.ASSISTANT_SEARCH and not search) else ""
 
-    response, failure = _call(client, context, question, earlier, search)
-    if failure is not None and search and failure.kind == "busy":
+    response, error = _call(client, context, question, earlier, search)
+    if error is not None and search and _is_quota(error):
         # A 429 with search on is almost always search itself being refused
         # (free tier, or allowance used up). Answer without it this time.
-        log.info("assistant: search refused (429); answering without web research")
+        log.info("assistant: search refused (429); answering without web research. "
+                 "Search grounding needs billing enabled on the key's Cloud project.")
         _block_search()
         notice = SEARCH_UNAVAILABLE_NOTICE
-        response, failure = _call(client, context, question, earlier, False)
-    if failure is not None:
-        return failure
+        response, error = _call(client, context, question, earlier, False)
+    if error is not None:
+        return _failure(error)
 
     feedback = getattr(response, "prompt_feedback", None)
     if feedback is not None and getattr(feedback, "block_reason", None):
@@ -333,7 +365,7 @@ def ask(context, question, earlier=()):
 
 
 def _call(client, context, question, earlier, search):
-    """Make one request. Returns (response, None), or (None, a failure Answer)."""
+    """Make one request. Returns (response, None), or (None, the exception)."""
     try:
         response = client.models.generate_content(
             model=config.ASSISTANT_MODEL,
@@ -341,61 +373,80 @@ def _call(client, context, question, earlier, search):
             config=_request_config(search),
         )
         return response, None
-    except errors.ClientError as exc:
-        return None, _client_error(exc)
-    except errors.ServerError as exc:
-        log.warning("assistant server error %s: %s", exc.code, exc.message)
-        return None, Answer(
-            False, "", "failed",
-            "The assistant service is having trouble. Try again in a few minutes.",
-        )
-    except errors.APIError as exc:
-        log.warning("assistant API error %s: %s", exc.code, exc.message)
-        return None, Answer(False, "", "failed", "Something went wrong asking the assistant. Try again.")
+    except Exception as exc:  # noqa: BLE001 - classified by _failure
+        return None, exc
+
+
+def _is_quota(exc):
+    return isinstance(exc, errors.ClientError) and exc.code == 429
+
+
+def _failure(exc):
+    """Log a provider failure in full and give the reader a generic answer.
+
+    The log carries the operator hint (bad key, unknown model, and so on);
+    the reader only learns "high demand" or "unavailable". Both are 503s.
+    """
+    if _is_quota(exc):
+        _log_failure(exc, "quota or rate limit exhausted")
+        return Answer(False, "", "unavailable", QUOTA_MESSAGE)
+    _log_failure(exc, _hint(exc))
+    return _unavailable()
+
+
+def _hint(exc):
+    """What an operator should check, for the log only."""
     # Network failures surface as raw httpx exceptions, not API errors.
     # TimeoutException is itself a RequestError, so it is checked first.
-    except httpx.TimeoutException:
-        return None, Answer(
-            False, "", "failed",
-            "The assistant took too long to answer. Try a shorter or simpler question.",
-        )
-    except httpx.RequestError:
-        return None, Answer(
-            False, "", "failed",
-            "Could not reach the assistant. Check your internet connection and try again.",
-        )
+    if isinstance(exc, httpx.TimeoutException):
+        return "request timed out"
+    if isinstance(exc, httpx.RequestError):
+        return "could not reach the API"
+    if isinstance(exc, errors.ServerError):
+        return f"server error {exc.code}"
+    if isinstance(exc, errors.ClientError):
+        message = str(exc.message or "")
+        # An invalid key is a 400 INVALID_ARGUMENT, not a 401.
+        if "api key not valid" in message.lower() or "API_KEY_INVALID" in str(exc.details or ""):
+            return "API key rejected: check GEMINI_API_KEY in .env"
+        if exc.code in (401, 403):
+            return "API key not permitted to use this model: check the key's project, or ASSISTANT_MODEL"
+        if exc.code == 404:
+            return f"model {config.ASSISTANT_MODEL!r} not available: set ASSISTANT_MODEL in .env"
+        return f"request rejected ({exc.code})"
+    if isinstance(exc, errors.APIError):
+        return f"API error {exc.code}"
+    return "unexpected error"
 
 
-def _client_error(exc):
-    message = str(exc.message or "")
-    # An invalid key is a 400 INVALID_ARGUMENT on Gemini, not a 401, so the
-    # status code alone would send someone off to rephrase their question.
-    if "api key not valid" in message.lower() or "API_KEY_INVALID" in str(exc.details or ""):
-        return Answer(
-            False, "", "not_configured",
-            "The Gemini API key was rejected. Check GEMINI_API_KEY in your .env "
-            "file, then restart the server.",
-        )
-    if exc.code in (401, 403):
-        return Answer(
-            False, "", "not_configured",
-            "The Gemini API key isn't allowed to use this model. Check the key's "
-            "project in Google AI Studio, or set ASSISTANT_MODEL in .env.",
-        )
-    if exc.code == 404:
-        return Answer(
-            False, "", "not_configured",
-            f"The model '{config.ASSISTANT_MODEL}' isn't available. Set "
-            "ASSISTANT_MODEL in .env to a current Gemini model.",
-        )
-    if exc.code == 429:
-        return Answer(
-            False, "", "busy",
-            "The assistant has hit its usage limit for now. Wait a minute and ask "
-            "again — free Gemini keys have low per-minute limits.",
-        )
-    log.warning("assistant client error %s: %s", exc.code, message)
-    return Answer(False, "", "failed", "That question could not be processed. Try rephrasing it.")
+# Google API keys are "AIza" plus 35 characters. The configured values are
+# redacted too, in case a key ever takes another shape.
+_KEY_PATTERN = re.compile(r"AIza[0-9A-Za-z_\-]{35}")
+
+
+def _redact(text):
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        key = os.getenv(name)
+        if key:
+            text = text.replace(key, "[redacted]")
+    return _KEY_PATTERN.sub("[redacted]", text)
+
+
+def _log_failure(exc, hint):
+    """Server-side only: error type, UTC timestamp, message and traceback.
+
+    The traceback is formatted here rather than passed as exc_info so it
+    goes through _redact before any handler sees it.
+    """
+    detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    log.error(
+        "assistant failure: %s | %s at %s | %s\n%s",
+        hint,
+        type(exc).__name__,
+        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        _redact(str(exc)),
+        _redact(detail),
+    )
 
 
 def _refused():
@@ -406,9 +457,5 @@ def _refused():
     )
 
 
-def _not_configured():
-    return Answer(
-        False, "", "not_configured",
-        "The assistant isn't set up yet. Add GEMINI_API_KEY=your_key to the .env "
-        "file (create a key at aistudio.google.com/apikey), then restart the server.",
-    )
+def _unavailable():
+    return Answer(False, "", "unavailable", UNAVAILABLE_MESSAGE)

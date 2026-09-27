@@ -735,8 +735,10 @@ def api_assistant():
         str(payload.get("symbol", "") or ""),
         earlier,
     )
+    # "busy" is this app's own per-account limit; "unavailable" is the AI
+    # provider out of quota or failing, which the reader sees only as 503.
     status = 200 if answer.ok else {"invalid": 400, "busy": 429,
-                                    "not_configured": 503, "disabled": 503}.get(answer.kind, 502)
+                                    "unavailable": 503, "disabled": 503}.get(answer.kind, 502)
     return {
         "ok": answer.ok,
         "answer": answer.text,
