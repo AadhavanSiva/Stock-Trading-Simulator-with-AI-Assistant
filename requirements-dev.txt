@@ -7,3 +7,7 @@ pytest==9.1.1
 # Supply-chain check: CI fails if any pinned package, or anything they pull
 # in, has a known vulnerability.
 pip-audit==2.10.1
+
+# Static security scan of the app's own code: CI fails on any finding.
+# False positives are marked inline with "# nosec <test id> - <why>".
+bandit==1.9.4

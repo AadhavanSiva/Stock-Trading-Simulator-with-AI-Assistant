@@ -10,7 +10,6 @@ Run it with:  python -m flask --app web run
 """
 import json
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -30,9 +29,16 @@ from portfolio_tracker.services import assistant, market_data
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# `python web.py` is a local debug run: the Werkzeug debugger and a
+# throwaway signing key. Never in production, where the debugger would run
+# arbitrary code for anyone who could reach it; there the same command runs
+# without debug and needs a real FLASK_SECRET_KEY like any other start.
+LOCAL_DEBUG_RUN = __name__ == "__main__" and config.ENVIRONMENT != "production"
+
 # Required unless this is a debug run: `flask run --debug` (FLASK_DEBUG=1,
-# which Flask reads into app.debug) or `python web.py`, which runs in debug.
-app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or __name__ == "__main__")
+# which Flask reads into app.debug) or a local `python web.py`.
+app.config["SECRET_KEY"] = config.flask_secret_key(debug=app.debug or LOCAL_DEBUG_RUN)
 
 # Every POST, including the JSON Ask endpoint, must carry a CSRF token tied
 # to the session: a hidden field in forms, an X-CSRFToken header from
@@ -136,24 +142,16 @@ def security_headers(response):
 
 @app.route("/healthz")
 def healthz():
-    """What is actually running here.
+    """Liveness only: the app is up and answering.
 
     Public and deliberately cheap: no database, no market data, no
-    session. It exists because there was previously no way to tell which
-    commit a deploy was serving — every page that differs between releases
-    is behind sign-in, so a deploy could silently not have happened.
-
-    Render exposes the commit as RENDER_GIT_COMMIT; locally there is none,
-    and "unknown" is the honest answer rather than a fabricated one.
+    session, so it still answers while the database is asleep. It says
+    nothing else. The commit, branch and which integrations are configured
+    used to be here, and each is a fact about the deployment that helps an
+    attacker more than a visitor; the deployed commit is on Render's
+    dashboard for anyone who needs it.
     """
-    return {
-        "status": "ok",
-        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
-        "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
-        "behind_proxy": config.BEHIND_HTTPS_PROXY,
-        "market_data_configured": config.alpaca_configured(),
-        "assistant_configured": assistant.research_available(),
-    }
+    return {"status": "ok"}
 
 
 @app.context_processor
@@ -176,6 +174,7 @@ def inject_user():
         "starting_cash": users.starting_cash(),
         "assistant_enabled": config.ASSISTANT_ENABLED,
         "assistant_research": assistant.research_available(),
+        "assistant_research_notice": assistant.SEARCH_UNAVAILABLE_NOTICE,
     }
 
 
@@ -1302,4 +1301,4 @@ def server_error(error):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=LOCAL_DEBUG_RUN)

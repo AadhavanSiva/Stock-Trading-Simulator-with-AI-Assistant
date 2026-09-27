@@ -57,6 +57,12 @@ class TestWorkflow:
         with open(os.path.join(ROOT, "requirements-dev.txt"), encoding="utf-8") as fh:
             assert re.search(r"^pip-audit==[\d.]+$", fh.read(), re.M)
 
+    def test_scans_the_app_code_with_bandit(self):
+        text = self.workflow()
+        assert "python -m bandit -r portfolio_tracker web.py main.py" in text
+        with open(os.path.join(ROOT, "requirements-dev.txt"), encoding="utf-8") as fh:
+            assert re.search(r"^bandit==[\d.]+$", fh.read(), re.M)
+
     def test_installs_the_dev_requirements_and_runs_pytest(self):
         text = self.workflow()
         assert "pip install -r requirements-dev.txt" in text

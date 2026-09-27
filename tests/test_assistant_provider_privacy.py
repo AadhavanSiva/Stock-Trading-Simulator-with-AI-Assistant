@@ -4,6 +4,7 @@ Provider failures reach the reader as one of two generic messages, with a
 503; the raw error, model name and endpoint stay in the server log, and the
 API key stays out of even that.
 """
+import html
 import re
 from decimal import Decimal
 from types import SimpleNamespace
@@ -177,3 +178,103 @@ class TestPages:
     def test_script_names_no_provider(self):
         js = open("static/app.js", encoding="utf-8").read().lower()
         assert "gemini" not in js and "google" not in js
+
+
+# Words that would tell the reader which provider is behind the assistant,
+# or how its account is set up. None may reach the reader.
+PROVIDER_WORDS = ("gemini", "google", "api key", "billing", "quota", "cloud")
+
+SEARCH_REFUSED_TEXT = (f"Search grounding is not available for key {FAKE_KEY}: enable billing "
+                       "on the Google Cloud project (quota: generativelanguage.googleapis.com)")
+
+
+def search_refused():
+    return errors.ClientError(429, {"error": {
+        "code": 429, "status": "RESOURCE_EXHAUSTED", "message": SEARCH_REFUSED_TEXT}})
+
+
+def plain_reply(text="Average cost is what you paid per share."):
+    return SimpleNamespace(prompt_feedback=None, candidates=[SimpleNamespace(
+        finish_reason=None, grounding_metadata=None,
+        content=SimpleNamespace(parts=[SimpleNamespace(text=text, thought=False)]))])
+
+
+class SearchRefusedClient:
+    """Refuses the search request, then answers the same question without it."""
+
+    def __init__(self):
+        self.calls = []
+        self.models = SimpleNamespace(generate_content=self._generate)
+
+    def _generate(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs["config"].tools:
+            raise search_refused()
+        return plain_reply()
+
+
+def assert_no_provider_words(text):
+    lowered = text.lower()
+    for word in PROVIDER_WORDS:
+        assert word not in lowered, word
+
+
+@pytest.fixture
+def search_on(monkeypatch):
+    """Search enabled and not in its cooldown, whatever an earlier test did."""
+    from portfolio_tracker import config
+    monkeypatch.setattr(config, "ASSISTANT_SEARCH", True)
+    monkeypatch.setattr(assistant, "_search_blocked_until", 0.0)
+
+
+class TestResearchUnavailable:
+    """Search refused (a free key, or an exhausted allowance): the answer
+    still arrives, with a notice that says only that research was off."""
+
+    def test_the_notice_names_no_provider_or_account_detail(self):
+        assert_no_provider_words(assistant.SEARCH_UNAVAILABLE_NOTICE)
+        assert "app's own data" in assistant.SEARCH_UNAVAILABLE_NOTICE
+
+    def test_api_answers_with_the_neutral_notice(self, client, search_on):
+        with patch.object(assistant, "_get_client", return_value=SearchRefusedClient()), quote():
+            response = client.post("/api/assistant", json={"question": "q"})
+        data = response.get_json()
+        assert response.status_code == 200 and data["ok"]
+        assert data["notice"] == assistant.SEARCH_UNAVAILABLE_NOTICE
+        assert data["research"] is False
+        body = everything(response)
+        assert SEARCH_REFUSED_TEXT.lower() not in body.lower()
+        assert_no_provider_words(data["notice"] + data["message"])
+
+    def test_the_next_question_in_the_cooldown_says_the_same(self, client, search_on):
+        fake = SearchRefusedClient()
+        with patch.object(assistant, "_get_client", return_value=fake), quote():
+            client.post("/api/assistant", json={"question": "first"})
+            data = client.post("/api/assistant", json={"question": "second"}).get_json()
+        assert not fake.calls[-1]["config"].tools        # search not even tried
+        assert data["notice"] == assistant.SEARCH_UNAVAILABLE_NOTICE
+
+    def test_no_javascript_page_shows_the_neutral_notice(self, client, search_on):
+        with patch.object(assistant, "_get_client", return_value=SearchRefusedClient()), quote():
+            response = client.post("/assistant", data={"question": "q"})
+        body = " ".join(html.unescape(response.get_data(as_text=True)).split())
+        assert assistant.SEARCH_UNAVAILABLE_NOTICE in body
+        assert "billing" not in body.lower() and "gemini" not in body.lower()
+        assert SEARCH_REFUSED_TEXT.lower() not in body.lower()
+
+    def test_the_real_reason_is_logged_with_the_key_redacted(self, caplog, monkeypatch, search_on):
+        monkeypatch.setenv("GEMINI_API_KEY", FAKE_KEY)
+        with patch.object(assistant, "_get_client", return_value=SearchRefusedClient()):
+            answer = assistant.ask("ctx", "q")
+        assert answer.ok
+        assert "web search refused" in caplog.text
+        assert "ClientError" in caplog.text and "Search grounding is not available" in caplog.text
+        assert FAKE_KEY not in caplog.text and "[redacted]" in caplog.text
+
+    def test_a_restored_answer_shows_todays_wording(self, client):
+        """The drawer replays saved answers; a saved notice must not bring
+        back text the app no longer uses."""
+        page = client.get("/buy").get_data(as_text=True)
+        assert f'data-research-notice="{assistant.SEARCH_UNAVAILABLE_NOTICE}"'.replace("'", "&#39;") in page
+        js = open("static/app.js", encoding="utf-8").read()
+        assert "turn.notice ? (drawer.dataset.researchNotice || turn.notice)" in js

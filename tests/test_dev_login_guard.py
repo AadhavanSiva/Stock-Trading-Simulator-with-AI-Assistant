@@ -22,7 +22,7 @@ def start_app(**env):
     cannot fill it in from a developer's .env.
     """
     environment = dict(os.environ, FLASK_SECRET_KEY="k" * 64, FLASK_DEBUG="0",
-                       ALLOW_DEV_LOGIN="", BEHIND_HTTPS_PROXY="")
+                       ALLOW_DEV_LOGIN="", BEHIND_HTTPS_PROXY="", ENVIRONMENT="")
     environment.update(env)
     return subprocess.run(
         [sys.executable, "-c", "import web"],

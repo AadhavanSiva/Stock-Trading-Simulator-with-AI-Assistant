@@ -419,7 +419,7 @@ while you are filling one in.
 
 The sign-in page tells you all of this, with your actual redirect URI filled in, whenever the credentials are missing.
 
-**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done. The app refuses to start if it is set together with `BEHIND_HTTPS_PROXY`, so it cannot be left on in a deployment.
+**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done. The app refuses to start if it is set together with `ENVIRONMENT=production` or `BEHIND_HTTPS_PROXY`, so it cannot be left on in a deployment.
 
 5. Run whichever interface you prefer — they share the same database and logic.
 
@@ -498,6 +498,9 @@ the service, so Render needs no hand-entered build settings.
 What the Blueprint sets and why:
 
 - **Python 3.13.15**, as in CI. Local, CI and production all naming one version is what makes a green CI run mean anything about production.
+- **`ENVIRONMENT=production`.** Says what the server is for, so
+  production-only safety checks stay on however requests reach it. The app
+  refuses to start with dev login enabled in production.
 - **`BEHIND_HTTPS_PROXY=1`.** Render terminates HTTPS and forwards plain
   HTTP, so the app trusts one hop of `X-Forwarded-*` headers (Werkzeug's
   `ProxyFix`) to build `https://` links, and marks the session cookie
@@ -640,7 +643,7 @@ deliberate:
 - **The data export is a download, never cached.** It carries `Cache-Control: no-store`, and money is exported as strings rather than floats so a cost basis of `164.20` survives the round trip exactly.
 - **Browser-level headers are set on every response.** `Content-Security-Policy` (scripts from this origin only — no `unsafe-inline`, which is the half that stops an injected payload; inline *styles* are allowed because the charts position points as percentages in style attributes), `X-Frame-Options: DENY` and `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy`. `Strict-Transport-Security` is sent only behind an HTTPS proxy — setting it on plain local http would pin a developer's browser to https for `127.0.0.1` across every project on their machine.
 - **The session cookie states `SameSite=Lax`** rather than inheriting it. Every current browser defaults an unset value to Lax, but "every current browser" is a moving claim and older ones default to the permissive direction. `Lax` rather than `Strict` because Google returns a signed-in user by a top-level GET, which `Strict` would drop — sign-in would break silently.
-- **`/healthz` says what is actually deployed.** Public, no database, no market data, no session: it has to answer while the database is asleep. It reports the commit SHA, whether market data and the assistant are configured, and nothing secret. It exists because every page that differs between releases sits behind sign-in, so a deploy could previously fail to happen with no way to tell from outside.
+- **`/healthz` answers `{"status": "ok"}` and nothing else.** Public, no database, no market data, no session: it has to answer while the database is asleep. It used to report the commit, branch and which integrations were configured; those are facts about the deployment that help an attacker more than a visitor, so they were removed. The deployed commit is on Render's dashboard.
 - **SQL is always parameterized**, secrets come only from the environment, and `.env` is git-ignored.
 
 ### Tests
@@ -652,7 +655,7 @@ python -m pytest
 
 Database tests run against a throwaway database (`portfolio_test` by default, override with `TEST_DB_NAME`) and never touch the application database. They skip automatically if PostgreSQL isn't reachable, so the pure-logic tests still run anywhere; set `REQUIRE_DB=1` to make that a failure instead. Market data and Gemini are both mocked. The market data guard is installed on the HTTP session itself rather than on named functions, so a request to an endpoint added later is caught without anyone remembering to extend it; a test that reaches the real API fails loudly rather than quietly passing.
 
-GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping.
+GitHub Actions runs the suite on every push and pull request to `main` (`.github/workflows/tests.yml`), on Python 3.13.15 with a PostgreSQL 16 service container and `REQUIRE_DB=1`, so the database tests run there rather than skipping. The same workflow runs `pip-audit` against the pinned dependencies and `bandit` against the app's own code, and fails on any known vulnerability or finding; the few `bandit` false positives are marked inline with `# nosec` and the reason.
 
 ### What I Gained from building this
 

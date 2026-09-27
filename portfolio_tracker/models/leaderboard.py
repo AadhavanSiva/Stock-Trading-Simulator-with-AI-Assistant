@@ -15,6 +15,8 @@ from portfolio_tracker.db import cursor
 
 # The latest sample per account, as a reusable subquery. DISTINCT ON walks
 # portfolio_value_history_user_time_idx and takes the first row per user.
+# The queries below splice it in with an f-string. That is safe because it
+# is a constant; bandit's B608 cannot tell, hence the nosec on each.
 _LATEST = """
     SELECT DISTINCT ON (user_id) user_id, total_value, recorded_at
     FROM portfolio_value_history
@@ -43,7 +45,7 @@ def standings(limit=50):
             WHERE u.leaderboard_opt_in
             ORDER BY latest.total_value DESC, u.id
             LIMIT %s
-            """,
+            """,  # nosec B608 # interpolates only the constant _LATEST; values are %s parameters
             (limit,),
         )
         return cur.fetchall()
@@ -89,7 +91,7 @@ def standing_for(user_id):
                        WHERE p.leaderboard_opt_in
                    ) AS participants
             FROM me
-            """,
+            """,  # nosec B608 # interpolates only the constant _LATEST; values are %s parameters
             (user_id,),
         )
         return cur.fetchone()
@@ -103,7 +105,7 @@ def participant_count():
             FROM users u
             JOIN ({_LATEST}) latest ON latest.user_id = u.id
             WHERE u.leaderboard_opt_in
-            """
+            """  # nosec B608 # interpolates only the constant _LATEST; values are %s parameters
         )
         return cur.fetchone()[0]
 
