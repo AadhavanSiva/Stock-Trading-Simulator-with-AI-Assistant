@@ -367,7 +367,7 @@ while you are filling one in.
 
 The sign-in page tells you all of this, with your actual redirect URI filled in, whenever the credentials are missing.
 
-**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done.
+**Trying it without Google.** Set `ALLOW_DEV_LOGIN=1` to enable a local sign-in form that accepts any email address and verifies nothing. It exists so you can use the app before creating a Cloud Console project. It is off unless that variable is set, and the page says plainly when it is on — unset it when you're done. The app refuses to start if it is set together with `BEHIND_HTTPS_PROXY`, so it cannot be left on in a deployment.
 
 5. Run whichever interface you prefer — they share the same database and logic.
 
