@@ -105,14 +105,6 @@ class TestTheHealthEndpoint:
     def test_it_is_public(self, anonymous):
         assert anonymous.get("/healthz").status_code == 200
 
-    def test_it_reports_a_commit(self, anonymous):
-        payload = anonymous.get("/healthz").get_json()
-        assert "commit" in payload and payload["commit"]
-
-    def test_it_says_whether_market_data_is_configured(self, anonymous):
-        payload = anonymous.get("/healthz").get_json()
-        assert payload["market_data_configured"] is True   # conftest pins fakes
-
     def test_it_touches_no_database(self, anonymous, monkeypatch):
         """It has to answer while the database is asleep or unreachable,
         or it cannot tell you the app is up when you most need to know."""

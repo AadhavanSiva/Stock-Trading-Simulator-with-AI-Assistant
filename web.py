@@ -10,7 +10,6 @@ Run it with:  python -m flask --app web run
 """
 import json
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -136,24 +135,16 @@ def security_headers(response):
 
 @app.route("/healthz")
 def healthz():
-    """What is actually running here.
+    """Liveness only: the app is up and answering.
 
     Public and deliberately cheap: no database, no market data, no
-    session. It exists because there was previously no way to tell which
-    commit a deploy was serving — every page that differs between releases
-    is behind sign-in, so a deploy could silently not have happened.
-
-    Render exposes the commit as RENDER_GIT_COMMIT; locally there is none,
-    and "unknown" is the honest answer rather than a fabricated one.
+    session, so it still answers while the database is asleep. It says
+    nothing else. The commit, branch and which integrations are configured
+    used to be here, and each is a fact about the deployment that helps an
+    attacker more than a visitor; the deployed commit is on Render's
+    dashboard for anyone who needs it.
     """
-    return {
-        "status": "ok",
-        "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
-        "branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
-        "behind_proxy": config.BEHIND_HTTPS_PROXY,
-        "market_data_configured": config.alpaca_configured(),
-        "assistant_configured": assistant.research_available(),
-    }
+    return {"status": "ok"}
 
 
 @app.context_processor
