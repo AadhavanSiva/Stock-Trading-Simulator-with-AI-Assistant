@@ -173,6 +173,10 @@ class TestAngularBlueprint:
             flask_name = name.search(fh.read()).group(1)
         assert name.search(self.blueprint()).group(1) != flask_name
 
+    def test_runs_beside_the_database(self):
+        """Neon is in AWS us-east-1; Render's name for that is virginia."""
+        assert re.search(r"^\s*region: virginia$", self.blueprint(), re.M)
+
     def test_runs_as_production(self):
         """Which is what makes the API insist on a real signing key."""
         assert re.search(r"key: ENVIRONMENT\s*\n\s*value: production", self.blueprint())

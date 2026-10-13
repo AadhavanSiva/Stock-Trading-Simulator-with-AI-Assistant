@@ -15,6 +15,10 @@ services:
     name: stock-trading-simulator-angular
     runtime: python
     plan: free
+    # US East (N. Virginia), the same AWS region as the Neon database, so a
+    # query is not a cross-country round trip. Render cannot move a service
+    # that already exists: changing this means creating a new one.
+    region: virginia
     # Three steps, in the order a failure is cheapest:
     #   1. the API's Python dependencies;
     #   2. init_db, which applies schema.sql and then every migration, both
