@@ -17,3 +17,12 @@ gunicorn==26.2.0
 
 # AI assistant
 google-genai==2.25.0
+
+# JSON API for the Angular web UI (api/). Runs beside the Flask app.
+fastapi==0.141.1
+uvicorn==0.54.0
+# Signs the API's own access tokens.
+PyJWT==2.15.1
+# Verifies Google ID tokens at sign-in. Already pulled in by google-genai;
+# pinned here because the API depends on it directly.
+google-auth==2.59.0

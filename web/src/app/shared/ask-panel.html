@@ -1,0 +1,176 @@
+@if (status()?.enabled) {
+  <button #toggle type="button" class="ask-toggle" (click)="open() ? close() : show()"
+          aria-controls="assistant" [attr.aria-expanded]="open()">
+    Ask@if (symbol()) { about {{ symbol() }} }
+  </button>
+
+  @if (open()) {
+    <aside class="ask" id="assistant" aria-labelledby="ask-title">
+      <div class="ask-head">
+        <div>
+          <h2 id="ask-title">Ask</h2>
+          <p class="faint">AI research assistant</p>
+        </div>
+        <button type="button" class="link" (click)="close()" aria-label="Close Ask">Close</button>
+      </div>
+
+      <div class="ask-context">
+        <p>
+          Looking at
+          @if (symbol()) { <span class="tag">{{ symbol() }}</span> } @else { your portfolio }
+          <span class="ask-research">{{ status()?.research ? 'Web research on' : 'Web research off' }}</span>
+        </p>
+        <!-- What goes to the AI provider with each question. Keep in step
+             with operations.assistant_context(): this is a promise. -->
+        <details>
+          <summary>What Ask can see</summary>
+          <h3>From your account</h3>
+          <ul>
+            <li>Today's date</li>
+            <li>Your cash, investments and account total</li>
+            <li>Each holding: shares, average price paid, current value</li>
+            @if (symbol()) {
+              <li>{{ symbol() }}'s current price, and your position in it or how many shares your cash would buy</li>
+              <li>{{ symbol() }}'s stored price history: 1 month, 6 months, 1 year and all-time ranges, and the latest trading session</li>
+            }
+            <li>Your last 3 questions and answers in this panel</li>
+          </ul>
+          <h3>From the web</h3>
+          <ul>
+            <li>
+              Web search, for news, earnings and company background@if (!status()?.research) {.
+              Off right now, so answers use only your account data and can't
+              include recent news}
+            </li>
+          </ul>
+          <h3>Never</h3>
+          <ul>
+            <li>Your name or email address, or anyone else's account</li>
+          </ul>
+        </details>
+      </div>
+
+      <div #log class="ask-log" role="log" aria-live="polite" aria-relevant="additions"
+           aria-labelledby="ask-title" [attr.aria-busy]="busy() ? 'true' : null">
+        @if (!entries().length) {
+          <p class="muted">
+            Ask what moved a price, what a company does, or what a term means.
+            Ask explains and researches. It won't tell you what to buy or sell.
+          </p>
+        }
+
+        @for (entry of entries(); track $index) {
+          @switch (entry.type) {
+            @case ('question') {
+              <div class="turn turn-question">{{ entry.question }}</div>
+            }
+            @case ('answer') {
+              <div class="turn turn-answer">
+                @if (entry.turn.notice) {
+                  <!-- Above the answer, so nobody reads it as researched first. -->
+                  <p class="answer-notice" role="note"><strong>Not researched</strong> {{ entry.turn.notice }}</p>
+                }
+                @for (paragraph of paragraphs(entry.turn.answer); track $index) {
+                  <p>{{ paragraph }}</p>
+                }
+
+                @if (entry.turn.sources.length || entry.turn.searches.length || entry.frame) {
+                  <div class="provenance">
+                    <p class="provenance-head">
+                      <span class="badge">Researched</span>
+                      @if (entry.turn.sources.length) {
+                        {{ entry.turn.sources.length }} {{ entry.turn.sources.length === 1 ? 'source' : 'sources' }}
+                      }
+                    </p>
+                    @if (entry.turn.searches.length) {
+                      <p class="searches">
+                        Searched the web for
+                        @for (query of entry.turn.searches; track $index; let last = $last) {<q>{{ query }}</q>@if (!last) {, }}
+                      </p>
+                    }
+                    @if (entry.turn.sources.length) {
+                      <ol class="sources">
+                        @for (src of entry.turn.sources; track src.uri) {
+                          <li>
+                            <a [href]="src.uri" target="_blank" rel="noopener">{{ src.title || src.uri }}</a>
+                            @if (src.domain && src.domain !== src.title) { <span class="faint">{{ src.domain }}</span> }
+                          </li>
+                        }
+                      </ol>
+                    }
+                    @if (entry.frame) {
+                      <iframe class="search-suggestions" title="Related searches"
+                              sandbox="allow-popups allow-popups-to-escape-sandbox"
+                              [srcdoc]="entry.frame"></iframe>
+                    }
+                  </div>
+                }
+
+                <p class="answer-foot">
+                  <span>AI-generated · can be wrong · not financial advice</span>
+                  <span>
+                    <button #copyButton type="button" class="link" (click)="copy(entry.turn.answer, copyButton)">Copy</button>
+                    <button type="button" class="link" (click)="ask(entry.turn.question)">Ask again</button>
+                  </span>
+                </p>
+              </div>
+            }
+            @case ('failure') {
+              <div class="turn turn-error" [class.is-info]="entry.failure.kind !== 'failed' && entry.failure.kind !== 'network'"
+                   [attr.role]="entry.failure.kind === 'failed' || entry.failure.kind === 'network' ? 'alert' : 'status'">
+                <strong>{{ title(entry.failure.kind) }}</strong>
+                <p>{{ entry.failure.message }} {{ countdown(entry.failure) }}</p>
+                @if (canRetry(entry.failure.kind)) {
+                  <button type="button" class="button small" (click)="ask(entry.failure.question)">Try again</button>
+                }
+              </div>
+            }
+          }
+        }
+
+        @if (waited() !== null && waited()! >= 1) {
+          <div class="turn turn-pending">
+            <p>
+              {{ waitingText() }}
+              @if (waited()! >= 20) { <span class="faint">{{ waited() }} s</span> }
+            </p>
+            @if (waited()! >= 45) {
+              <button type="button" class="button small" (click)="cancel()">Cancel</button>
+            }
+          </div>
+        }
+      </div>
+
+      @if (!entries().length) {
+        <div class="ask-starters">
+          <p class="label">Try asking</p>
+          @for (starter of starters(); track starter) {
+            <button type="button" (click)="ask(starter)">{{ starter }}</button>
+          }
+        </div>
+      }
+
+      <form class="ask-form" (ngSubmit)="ask(question)">
+        <label for="ask-question">Your question</label>
+        <textarea #field id="ask-question" name="question" rows="2" [(ngModel)]="question"
+                  [attr.maxlength]="maxChars()" aria-describedby="ask-keys" (keydown)="key($event)"
+                  [placeholder]="symbol() ? 'Ask about ' + symbol() + '…' : 'Ask about your portfolio…'"></textarea>
+        <div class="composer-row">
+          <span id="ask-keys" class="faint">
+            Enter to send · Shift+Enter for a new line
+            @if (question.length >= maxChars() * 0.9) {
+              · {{ maxChars() - question.length }} characters left
+            }
+          </span>
+          <button type="submit" class="button small primary" [disabled]="busy()">Ask</button>
+        </div>
+        <p class="faint">
+          Answers are AI-generated and can be wrong; check the sources. Not
+          financial advice. Questions are sent to a third-party AI provider,
+          which may use them to improve its products and whose staff may read
+          them, so leave out anything personal.
+        </p>
+      </form>
+    </aside>
+  }
+}

@@ -1,0 +1,98 @@
+<section class="hero">
+  <p class="label label-mark">A practice portfolio</p>
+  <h1>Learn how investing works, before it costs you.</h1>
+  <p class="lede">
+    Start with {{ startingCash() }} of pretend money, buy real companies at real
+    prices, and research each one with an AI assistant that shows its sources.
+  </p>
+  <div class="actions">
+    <a class="button primary" routerLink="/signup">Open an account</a>
+    <a class="button" routerLink="/login">I already have one</a>
+  </div>
+</section>
+
+<section class="landing-section two-col">
+  <div>
+    <p class="label">Why practise</p>
+    <h2>Most people learn about investing by losing money slowly</h2>
+    <p class="muted">
+      The habits are what cost you: buying something you don't understand,
+      selling the moment it dips, checking the price six times before lunch.
+      You can practise all of them here for nothing, and notice how each one
+      feels before it has a price.
+    </p>
+  </div>
+  <div class="panel specimen">
+    <p class="label">Example account, a few weeks in</p>
+    <dl class="facts">
+      <dt>Cash</dt><dd>$46,677.30</dd>
+      <dt>Investments</dt><dd>$3,621.15</dd>
+      <dt><strong>Account value</strong></dt>
+      <dd>
+        <span class="delta gain"><strong>$50,298.45</strong>
+          <span class="arrow" aria-hidden="true">▲</span> up</span>
+      </dd>
+    </dl>
+    <p class="faint">Illustrative figures, not a promise.</p>
+  </div>
+</section>
+
+<section class="landing-section">
+  <p class="label">How it works</p>
+  <h2>Three steps, no jargon</h2>
+  <div class="how">
+    <div class="panel">
+      <p class="label">Step 1</p>
+      <h3>Find a company</h3>
+      <p>
+        Type a ticker, like AAPL for Apple or MSFT for Microsoft. The name and
+        today's price appear as you type, so a typo is obvious at once.
+      </p>
+    </div>
+    <div class="panel">
+      <p class="label">Step 2</p>
+      <h3>Decide an amount</h3>
+      <p>
+        Buy a whole share or part of one. You see the total cost and what your
+        cash will be afterwards before anything is confirmed.
+      </p>
+    </div>
+    <div class="panel">
+      <p class="label">Step 3</p>
+      <h3>Wait, and watch</h3>
+      <p>
+        Prices move. Your portfolio shows what you paid, what it's worth now,
+        and the difference, stated plainly in either direction.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section two-col">
+  <div>
+    <p class="label">Research with Ask</p>
+    <h2>Understand what moved a price, with the sources to check</h2>
+    <ul class="checks">
+      <li>Explains past moves and company news; never predicts or tells you what to buy</li>
+      <li>Lists the searches it ran and links every source</li>
+      <li>Says plainly when it couldn't research something</li>
+      <li>Gains and losses reported the same way, without fanfare</li>
+    </ul>
+    <div class="actions">
+      <a class="button primary" routerLink="/signup">Start with {{ startingCash() }}</a>
+    </div>
+  </div>
+  <div class="panel specimen" aria-label="Example of an Ask answer">
+    <p class="label">Example answer</p>
+    <p><strong>What moved Apple's price this year?</strong></p>
+    <p class="muted">
+      Most of the climb came in two stretches. Coverage links the second to the
+      company's July quarterly report…
+    </p>
+    <div class="provenance">
+      <p class="provenance-head"><span class="badge">Researched</span> 4 sources</p>
+      <p class="searches">Searched the web for <q>Apple quarterly results July</q></p>
+    </div>
+    <p class="faint">Illustration of the format.</p>
+  </div>
+</section>

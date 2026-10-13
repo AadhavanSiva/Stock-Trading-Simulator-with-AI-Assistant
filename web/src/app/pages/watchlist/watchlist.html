@@ -1,0 +1,95 @@
+<header class="page-head">
+  <h1>Watchlist</h1>
+  @if (data()?.rows?.length) {
+    <div class="actions">
+      <button type="button" class="button small" (click)="refresh()" [disabled]="busy()">Refresh prices</button>
+    </div>
+  }
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+@if (message()) {
+  <p class="notice success" role="status">{{ message() }}</p>
+}
+
+<form class="panel narrow" (submit)="$event.preventDefault(); follow()">
+  <app-symbol-search label="Add a company to follow" inputId="follow" [(value)]="symbol" (chosen)="follow($event)" />
+  <button type="submit" class="button" [disabled]="busy()">Follow</button>
+</form>
+
+@if (data(); as w) {
+  @if (w.rows.length) {
+    <section class="panel">
+      <h2>Following</h2>
+      <p class="muted">{{ w.rows.length }} {{ w.rows.length === 1 ? 'company' : 'companies' }}</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Company</th>
+              <th scope="col" class="num">Price</th>
+              <th scope="col" class="num">Today</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of w.rows; track row.symbol) {
+              <tr>
+                <th scope="row">
+                  <a [routerLink]="['/stock', row.symbol]" class="symbol">{{ row.symbol }}</a>
+                  @if (row.owned) { <span class="tag">Held</span> }
+                  <span class="company">{{ row.company_name }}</span>
+                </th>
+                <td class="num">{{ row.price | money }}</td>
+                <td class="num">
+                  @if (row.todays_change !== null) {
+                    <app-delta [amount]="row.todays_change" [percent]="row.todays_percent" />
+                  } @else { — }
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <a class="button small" routerLink="/buy" [queryParams]="{ symbol: row.symbol }">Buy</a>
+                    <button type="button" class="button small" (click)="unfollow(row.symbol)" [disabled]="busy()"
+                            [attr.aria-label]="'Unfollow ' + row.symbol">Unfollow</button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (w.prices_as_of) {
+        <p class="as-of">Prices as of {{ w.prices_as_of | when }}</p>
+      }
+    </section>
+
+    <section class="panel glossary">
+      <h2>In plain words</h2>
+      <dl>
+        <dt>Today</dt>
+        <dd>
+          How far the price has moved since the previous session's close. A
+          dash means no close has been recorded yet — refresh to fetch one.
+        </dd>
+        <dt>Watching and owning</dt>
+        <dd>
+          Separate things. A watched company is not part of your account value
+          and costs you nothing; a company you also hold is marked "Held".
+        </dd>
+      </dl>
+    </section>
+  } @else {
+    <section class="panel">
+      <h2>Nothing followed yet</h2>
+      <p class="empty">
+        A watchlist is for companies you want to keep an eye on without buying
+        them. Nothing here costs anything or affects your account value — it
+        is just a list.
+      </p>
+    </section>
+  }
+} @else if (!error()) {
+  <p class="muted">Loading your watchlist…</p>
+}

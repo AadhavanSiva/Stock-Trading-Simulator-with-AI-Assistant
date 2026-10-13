@@ -1,4 +1,5 @@
-"""Hosting support: DATABASE_URL, the HTTPS proxy setting, init_db, render.yaml."""
+"""Hosting support: DATABASE_URL, the HTTPS proxy setting, init_db, the Render Blueprints."""
+import json
 import os
 import re
 import subprocess
@@ -108,9 +109,11 @@ class TestInitDb:
         assert "no route to host" in capsys.readouterr().err
 
 
-class TestRenderBlueprint:
+class TestFlaskBlueprint:
+    """render.flask.yaml: the Flask app, as its own service."""
+
     def blueprint(self):
-        with open(os.path.join(ROOT, "render.yaml"), encoding="utf-8") as fh:
+        with open(os.path.join(ROOT, "render.flask.yaml"), encoding="utf-8") as fh:
             return fh.read()
 
     def test_python_version_matches_ci(self):
@@ -140,6 +143,61 @@ class TestRenderBlueprint:
         """Test tools stay out of the production build."""
         assert "pip install -r requirements.txt " in self.blueprint()
         assert "requirements-dev" not in self.blueprint()
+
+
+class TestAngularBlueprint:
+    """render.yaml, the default Blueprint: one service for the API and the built UI."""
+
+    def blueprint(self):
+        with open(os.path.join(ROOT, "render.yaml"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_python_version_matches_ci(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "tests.yml"), encoding="utf-8") as fh:
+            ci = re.search(r'python-version: "([\d.]+)"', fh.read()).group(1)
+        assert re.search(rf"key: PYTHON_VERSION\s*\n\s*value: {re.escape(ci)}\b", self.blueprint())
+
+    def test_builds_the_database_and_the_ui_then_serves_the_api(self):
+        text = self.blueprint()
+        build = re.search(r"^\s*buildCommand: (.+)$", text, re.M).group(1)
+        assert build.index("pip install -r requirements.txt ") \
+            < build.index("python -m portfolio_tracker.init_db") \
+            < build.index("npm ci") < build.index("npm run build")
+        assert "requirements-dev" not in text
+        assert "startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT" in text
+        assert "healthCheckPath: /api/healthz" in text
+
+    def test_is_a_separate_service_from_the_flask_one(self):
+        name = re.compile(r"^\s*name: (\S+)$", re.M)
+        with open(os.path.join(ROOT, "render.flask.yaml"), encoding="utf-8") as fh:
+            flask_name = name.search(fh.read()).group(1)
+        assert name.search(self.blueprint()).group(1) != flask_name
+
+    def test_runs_as_production(self):
+        """Which is what makes the API insist on a real signing key."""
+        assert re.search(r"key: ENVIRONMENT\s*\n\s*value: production", self.blueprint())
+
+    def test_secrets_are_never_written_in_the_file(self):
+        text = self.blueprint()
+        for key in ("DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+                    "GEMINI_API_KEY", "ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
+            assert re.search(rf"key: {key}\s*\n\s*sync: false", text), key
+        assert re.search(r"key: JWT_SECRET_KEY\s*\n\s*generateValue: true", text)
+
+    def test_the_servers_it_starts_are_pinned(self):
+        with open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8") as fh:
+            requirements = fh.read()
+        for package in ("fastapi", "uvicorn"):
+            assert re.search(rf"^{package}==[\d.]+$", requirements, re.M), package
+
+    def test_the_ui_build_is_reproducible_and_where_the_api_looks(self):
+        from api import spa
+
+        assert os.path.isfile(os.path.join(ROOT, "web", "package-lock.json"))
+        with open(os.path.join(ROOT, "web", "angular.json"), encoding="utf-8") as fh:
+            project = next(iter(json.load(fh)["projects"]))
+        # Angular's application builder writes to dist/<project>/browser.
+        assert spa.DEFAULT_DIRECTORY == os.path.join(ROOT, "web", "dist", project, "browser")
 
 
 class TestRequirementsSplit:

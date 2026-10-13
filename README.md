@@ -140,7 +140,7 @@ into the night on a guess.
 
 A module-level claim set means ten simultaneous viewers of one holding
 cause one refresh. **That set, and the quote cache, are per process** —
-fine at the single worker `render.yaml` starts, and the thing to move into
+fine at the single worker each Blueprint starts, and the thing to move into
 the database before adding a second. The code says so at the claim set,
 with `stocks.updated_at` named as the column to coordinate on.
 
@@ -474,17 +474,131 @@ The sign-in page tells you all of this, with your actual redirect URI filled in,
    In debug mode `FLASK_SECRET_KEY` is optional; set it in `.env` to keep
    sessions and flash messages working across restarts.
 
+### Angular UI + FastAPI
+
+A second front end is being built beside the Flask app: an Angular single-page
+app in `web/` talking to a FastAPI JSON API in `api/`. Both use the same
+database and the same `portfolio_tracker` domain layer as the Flask app and the
+CLI, so an account, its cash and its trades are the same whichever front end
+you use. The Flask app keeps working unchanged while this reaches parity.
+
+It now covers every page the Flask app has: the landing, sign-up and log-in
+pages, the portfolio, the balance, buying, selling, the trade history, the price
+history, the stock page with its chart, search, the watchlist, the leaderboard,
+the account page with its export and deletion, Update data, the Ask assistant
+panel, and the three policy pages. Two deliberate differences: Ask is the panel
+only, since the Flask app's separate `/assistant` page exists for browsers
+without JavaScript and this front end cannot run without it; and the landing
+page has no animated 3D backdrop.
+
+```
+Browser ──▶ Angular (web/, :8200) ──/api──▶ FastAPI (api/, :8000) ──▶ portfolio_tracker ──▶ PostgreSQL
+                                                                      └─────────────▶ Alpaca
+```
+
+**Sign-in.** The browser signs in with Google Identity Services, which hands it a
+Google ID token. `POST /api/auth/google` verifies that token against Google's
+keys and this app's client id, finds or creates the account, and answers with
+the API's own JWT (HS256, 12 hours by default). Every other call sends it as
+`Authorization: Bearer …`. The token names the account and nothing else; cash
+and email are read fresh on each request, so deleting an account stops its
+tokens working at once. The UI keeps the token in `localStorage` and only ever
+attaches it to same-origin `/api/` requests.
+
+**Money** travels as JSON strings (`"1234.50"`), never numbers, and the browser
+only formats it. Trades keep the Flask app's two-step shape — a preview that
+writes nothing, then a commit that re-prices the order from scratch — so a
+previewed figure can never be replayed into a trade.
+
+**Charts** are projected server-side by `portfolio_tracker/charts.py`, exactly as
+for the Flask pages; the API returns the SVG paths, axis ticks and hover
+readouts, and the Angular chart component only draws them.
+
+#### Running it
+
+Two extra settings, both in `.env.example`:
+
+- `JWT_SECRET_KEY` — signs the API's tokens. Optional locally (a throwaway key
+  is used, and sign-ins end on restart); required with `ENVIRONMENT=production`.
+- Google sign-in needs `http://localhost:8200` and `http://localhost` added
+  under **Authorized JavaScript origins** on the same OAuth client. No redirect
+  URI is involved: the SPA flow never leaves the page.
+
+`ALLOW_DEV_LOGIN=1` works here too.
+
+```bash
+# Terminal 1 — the API (installs FastAPI, uvicorn, PyJWT with the rest)
+pip install -r requirements.txt
+uvicorn api.main:app --reload --port 8000  # http://127.0.0.1:8000, docs at /api/docs
+
+# Terminal 2 — the UI (Node 20.19+ or 22+)
+cd web
+npm install
+npm start                                # http://localhost:8200, proxies /api to :8000
+```
+
+#### Endpoints
+
+| Method | Path | |
+| --- | --- | --- |
+| GET | `/api/auth/config` | Which sign-in methods are on (public) |
+| POST | `/api/auth/google` | Google ID token → access token |
+| POST | `/api/auth/dev` | Local sign-in, only with `ALLOW_DEV_LOGIN` |
+| GET | `/api/auth/me` | The signed-in account |
+| GET | `/api/portfolio` | Holdings, cash, totals, performance, recent trades |
+| GET | `/api/search?q=` | Companies by ticker or name |
+| GET | `/api/quote?symbol=` | Price, position and buying power |
+| POST | `/api/buy/preview`, `/api/buy` | `{"symbol", "shares"}` — price, then commit |
+| GET | `/api/sell/{symbol}` | The position and today's price |
+| POST | `/api/sell/preview`, `/api/sell` | `{"symbol", "shares"}` — price, then commit |
+| GET | `/api/stocks/{symbol}?range=` | Quote and projected chart for a range |
+| POST | `/api/stocks/{symbol}/fetch` | Load the history behind an empty chart |
+| GET | `/api/trades?page=` | The trade log a page at a time, with realized gains |
+| GET | `/api/history` | Each holding's price against its 30-day range |
+| GET | `/api/watchlist` | Followed companies with today's move |
+| POST | `/api/watchlist` | `{"symbol"}` — follow a company |
+| DELETE | `/api/watchlist/{symbol}` | Stop following |
+| POST | `/api/watchlist/refresh` | Re-quote the followed companies |
+| GET | `/api/leaderboard` | Opted-in standings and your own rank |
+| GET | `/api/account` | Account details and leaderboard setting |
+| POST | `/api/account/leaderboard` | `{"opt_in", "name"}` — join or leave |
+| GET | `/api/account/export` | The account's data as a JSON download |
+| POST | `/api/account/delete` | `{"confirmation"}` — erase the account |
+| POST | `/api/actions/refresh-prices` | Re-quote every holding and value the account |
+| POST | `/api/actions/load-history` | Download six months of daily prices per holding |
+| GET | `/api/assistant/status` | Whether Ask is on, and whether it can search the web |
+| POST | `/api/assistant` | `{"question", "symbol", "earlier"}` — ask; rate-limited per account |
+| GET | `/api/healthz` | Liveness |
+
+Errors always come back as `{"detail": "..."}` written for a person: 400 for
+something the reader can correct, 401 for a missing or expired token, 503 when
+market data is unreachable.
+
+#### Tests
+
+`tests/test_api.py` runs with the rest of the Python suite (`python -m pytest`)
+against the same throwaway database. The UI's unit tests run in headless
+Chrome: `cd web && npm run test:ci`. CI runs both, plus an Angular build.
+
 ### Deploying (Render + Neon, free tiers)
 
 The app runs on a [Render](https://render.com) free web service with a
-[Neon](https://neon.tech) free PostgreSQL database. `render.yaml` describes
-the service, so Render needs no hand-entered build settings.
+[Neon](https://neon.tech) free PostgreSQL database. Two Blueprints describe
+the two front ends, so Render needs no hand-entered build settings:
+
+- `render.yaml` — the Angular UI + FastAPI. Render reads this one by default.
+- `render.flask.yaml` — the Flask app, as a separate service.
+
+They are independent: deploy either, or both against one database.
+
+#### Deploying the Flask app
 
 1. **Database.** Create a Neon project and copy its connection string
    (Dashboard → Connect). The pooled one, with `-pooler` in the host name,
    suits this app, which opens a short connection per query. It looks like
    `postgresql://user:password@ep-xxx-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require`.
-2. **Service.** In Render: New → Blueprint, pick this repository, and fill in
+2. **Service.** In Render: New → Blueprint, pick this repository, set the
+   **Blueprint path** to `render.flask.yaml`, and fill in
    the values it asks for: `DATABASE_URL` (the Neon string), `GOOGLE_CLIENT_ID`,
    `GOOGLE_CLIENT_SECRET` and `GEMINI_API_KEY`. `FLASK_SECRET_KEY` is generated
    for you. Every build runs `python -m portfolio_tracker.init_db`, which
@@ -508,6 +622,38 @@ What the Blueprint sets and why:
 - **`gunicorn web:app --workers 1 --threads 8 --timeout 150`.** One process
   keeps the quote cache shared; the timeout outlasts the assistant's 120 s
   limit.
+
+#### Deploying the Angular UI
+
+`render.yaml` deploys the Angular + FastAPI front end as its own Render
+service, `stock-trading-simulator-angular`.
+
+One service serves both halves. The build compiles the Angular app into
+`web/dist`, and FastAPI answers `/api` and hands out those files for every
+other path (`api/spa.py`). Everything is one origin, so there is no CORS to
+set up.
+
+1. **Service.** In Render: New → Blueprint and pick this repository; Render
+   reads `render.yaml` without being told. Fill in `DATABASE_URL`,
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GEMINI_API_KEY`,
+   `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY`. `JWT_SECRET_KEY` is
+   generated for you.
+2. **Database.** Give it the same `DATABASE_URL` as the Flask service and an
+   account, its cash and its trades are the same in both. Each build runs
+   `init_db`, which is safe to run from both services.
+3. **Google sign-in.** Once Render shows the service URL, add
+   `https://<your-service>.onrender.com` under **Authorized JavaScript
+   origins** on the OAuth client. No redirect URI is needed.
+
+The Blueprint sets `ENVIRONMENT=production`, which makes the API insist on
+`JWT_SECRET_KEY`, refuse dev login and stop publishing `/api/docs`. It starts
+`uvicorn api.main:app` as one process, so the quote cache is shared. The build
+needs Node as well as Python; Render's Python runtime includes it, and
+`NODE_VERSION` pins a release Angular supports.
+
+To try the production arrangement locally, build the UI and start the API
+without the dev server: `cd web && npm run build`, then
+`uvicorn api.main:app --port 8000` and open `http://127.0.0.1:8000`.
 
 `DATABASE_URL` is passed to the driver whole, so `sslmode=require` applies.
 Locally, leave it unset and the `DB_*` settings are used as before; the

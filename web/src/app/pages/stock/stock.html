@@ -1,0 +1,82 @@
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (detail(); as d) {
+  <header class="page-head">
+    <div>
+      <h1><span class="symbol">{{ d.symbol }}</span> {{ d.quote.company_name }}</h1>
+      <p class="headline-price">
+        <span class="price">{{ d.quote.price | money }}</span>
+        @if (dayChange(); as change) {
+          <app-delta [amount]="change.amount" [percent]="change.percent" /> <span class="muted">today</span>
+        }
+      </p>
+    </div>
+    <div class="actions">
+      <a class="button primary" routerLink="/buy" [queryParams]="{ symbol: d.symbol }">Buy</a>
+      @if (d.quote.owned) {
+        <a class="button" [routerLink]="['/sell', d.symbol]">Sell</a>
+      }
+      <button type="button" class="button" (click)="toggleWatch()" [disabled]="watchBusy()">
+        {{ d.watching ? 'Unfollow' : 'Follow' }}
+      </button>
+    </div>
+  </header>
+
+  @if (fetched()) {
+    <p class="notice success" role="status">{{ fetched() }}</p>
+  }
+
+  <section class="panel">
+    <nav class="ranges" aria-label="Chart range">
+      @for (r of d.ranges; track r.key) {
+        <button type="button" [class.active]="r.key === d.range" [attr.aria-pressed]="r.key === d.range"
+                (click)="choose(r.key)">{{ r.label }}</button>
+      }
+    </nav>
+
+    @if (d.chart; as chart) {
+      <p class="muted">
+        {{ d.range_label }}: <app-delta [amount]="chart.change" [percent]="chart.change_pct" />
+      </p>
+      <app-price-chart [chart]="chart" />
+      <dl class="stats">
+        <div><dt>Low</dt><dd>{{ d.stats.low | money }}</dd></div>
+        <div><dt>High</dt><dd>{{ d.stats.high | money }}</dd></div>
+        <div><dt>Average</dt><dd>{{ d.stats.average | money }}</dd></div>
+      </dl>
+    } @else {
+      <p class="empty">No {{ d.range_label.toLowerCase() }} prices stored for {{ d.symbol }} yet.</p>
+    }
+
+    @if (d.needs_fetch) {
+      <p class="fetch">
+        @if (d.partial && d.stored_since) {
+          Stored prices only go back to {{ d.stored_since }}.
+        }
+        <button type="button" class="button" (click)="fetch()" [disabled]="fetching()">
+          {{ fetching() ? 'Fetching…' : 'Fetch ' + (d.intraday ? 'intraday prices' : 'full price history') }}
+        </button>
+      </p>
+      @if (!d.intraday) {
+        <p class="hint">History from the market data provider starts on {{ d.earliest_available }}.</p>
+      }
+    }
+    @if (d.prices_as_of) {
+      <p class="as-of">Price as of {{ d.prices_as_of | when }}</p>
+    }
+  </section>
+
+  @if (d.quote.owned) {
+    <section class="panel">
+      <h2>Your position</h2>
+      <dl class="facts">
+        <dt>Shares</dt><dd>{{ d.quote.owned | shares }}</dd>
+        <dt>Average cost</dt><dd>{{ d.quote.average_cost | money }}</dd>
+      </dl>
+    </section>
+  }
+} @else if (!error()) {
+  <p class="muted">Loading…</p>
+}

@@ -1,0 +1,109 @@
+<header class="page-head">
+  <div>
+    <h1>Leaderboard</h1>
+    <p class="lede">
+      Only a chosen name, total account value and return are listed — never
+      real names, email addresses, holdings, trades or cash. Taking part is
+      optional and off until you turn it on, and you can leave at any time
+      from your <a routerLink="/account">account page</a>.
+    </p>
+  </div>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }} <button class="link" (click)="load()">Try again</button></p>
+}
+
+@if (data(); as board) {
+  @if (board.standing; as me) {
+    <section class="tiles" aria-label="Your standing">
+      <div class="tile">
+        <span class="tile-label">Your rank</span>
+        <span class="tile-value">{{ me.rank }}<span class="muted">/{{ me.participants }}</span></span>
+        <span class="tile-sub">{{ me.opted_in ? 'You are listed below' : 'Where you would come if you joined' }}</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Your account value</span>
+        <span class="tile-value">{{ me.total_value | money }}</span>
+        <span class="tile-sub">as of {{ me.as_of | when }}</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Your return</span>
+        <span class="tile-value">{{ me.percent_return | percent }}</span>
+        <span class="tile-sub">Against the {{ board.starting_cash | money }} you started with</span>
+      </div>
+    </section>
+
+    @if (!me.opted_in) {
+      <section class="panel">
+        <p>
+          You are not on the leaderboard. Nobody else can see your rank, your
+          account value or your return until you choose to appear.
+        </p>
+        <a class="button" routerLink="/account">Join from your account page</a>
+      </section>
+    }
+  } @else {
+    <section class="panel">
+      <p class="empty">
+        Your account has not been valued yet, so there is nothing to rank.
+        <a routerLink="/actions">Refresh prices</a> and it will appear.
+      </p>
+    </section>
+  }
+
+  <section class="panel">
+    @if (board.rows.length) {
+      <h2>Standings</h2>
+      <p class="muted">
+        {{ board.rows.length }} {{ board.rows.length === 1 ? 'player' : 'players' }},
+        valued at the last price refresh
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" class="num">#</th>
+              <th scope="col">Name</th>
+              <th scope="col" class="num">Account value</th>
+              <th scope="col" class="num">Return</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of board.rows; track row.rank) {
+              <tr [class.is-you]="row.is_you">
+                <td class="num">{{ row.rank }}</td>
+                <td>{{ row.name }} @if (row.is_you) { <span class="tag">You</span> }</td>
+                <td class="num">{{ row.total_value | money }}</td>
+                <td class="num">{{ row.percent_return | percent }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <h2>Nobody has joined yet</h2>
+      <p class="empty">
+        The leaderboard lists only people who have opted in, and so far that is
+        nobody. It is not a measure of who is here — just of who chose to be
+        listed.
+      </p>
+    }
+  </section>
+
+  <section class="panel glossary">
+    <h2>In plain words</h2>
+    <dl>
+      <dt>Account value</dt>
+      <dd>Cash plus what the holdings are worth, as of the last time prices were refreshed. It is not live.</dd>
+      <dt>Return</dt>
+      <dd>
+        Growth against the {{ board.starting_cash | money }} every account
+        starts with, so a new account and an old one are compared on the same
+        terms.
+      </dd>
+    </dl>
+  </section>
+} @else if (!error()) {
+  <p class="muted">Loading the leaderboard…</p>
+}

@@ -73,4 +73,31 @@ jobs:
       # inline with "# nosec <test id> - <why>" rather than skipped here.
       - name: Scan code with bandit
         if: ${{ !cancelled() }}
-        run: python -m bandit -r portfolio_tracker web.py main.py
+        run: python -m bandit -r portfolio_tracker api web.py main.py
+
+  web:
+    # The Angular UI in web/: type-check and build it, and run its unit
+    # tests in headless Chrome (preinstalled on the runner image).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npx ng build
+
+      - name: Unit tests
+        run: npm run test:ci

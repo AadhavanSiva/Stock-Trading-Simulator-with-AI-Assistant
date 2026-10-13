@@ -76,8 +76,9 @@ class TestCheck:
 
 
 class TestRenderBlueprint:
-    def test_the_blueprint_declares_production(self):
-        with open(os.path.join(ROOT, "render.yaml"), encoding="utf-8") as fh:
+    @pytest.mark.parametrize("name", ["render.yaml", "render.flask.yaml"])
+    def test_every_blueprint_declares_production(self, name):
+        with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
             blueprint = fh.read()
         assert re.search(r"key: ENVIRONMENT\s*\n\s*value: production\b", blueprint)
         assert not re.search(r"key: ALLOW_DEV_LOGIN", blueprint)

@@ -1,0 +1,54 @@
+<header class="page-head">
+  <h1>Sell {{ symbol() | uppercase }}</h1>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+<div class="panel narrow">
+  @if (quote(); as q) {
+    @if (!preview()) {
+      <p class="quote-head">
+        <a [routerLink]="['/stock', q.symbol]" class="symbol">{{ q.symbol }}</a> {{ q.company_name }}
+        <span class="price">{{ q.price | money }}</span>
+      </p>
+      <dl class="facts">
+        <dt>You own</dt><dd>{{ q.owned | shares }} shares</dd>
+        <dt>Average cost</dt><dd>{{ q.average_cost | money }}</dd>
+      </dl>
+      <form (ngSubmit)="review()">
+        <label for="shares">Shares to sell</label>
+        <div class="input-row">
+          <input id="shares" name="shares" type="text" inputmode="decimal" autocomplete="off"
+                 [(ngModel)]="shares" required />
+          <button type="button" class="button" (click)="sellAll()">All {{ q.maximum | shares }}</button>
+        </div>
+        <div class="actions">
+          <button type="submit" class="button primary" [disabled]="busy()">Review sale</button>
+          <a class="button" routerLink="/sell">Cancel</a>
+        </div>
+      </form>
+    } @else {
+      @let p = preview()!;
+      <h2>Review your sale</h2>
+      <dl class="facts">
+        <dt>Sell</dt><dd>{{ p.shares | shares }} shares of {{ p.symbol }} ({{ p.company_name }})</dd>
+        <dt>Price per share</dt><dd>{{ p.price | money }}</dd>
+        <dt>Proceeds</dt><dd><strong>{{ p.proceeds | money }}</strong></dd>
+        <dt>Gain / loss on these shares</dt><dd><app-delta [amount]="p.gain" /></dd>
+        <dt>Cash after</dt><dd>{{ p.cash_after | money }}</dd>
+      </dl>
+      @if (p.closes) {
+        <p class="notice-inline">This sells your whole {{ p.symbol }} position.</p>
+      }
+      <p class="hint">The sale fills at the price when you confirm, which may differ slightly from this one.</p>
+      <div class="actions">
+        <button type="button" class="button primary" (click)="confirm()" [disabled]="busy()">Confirm sale</button>
+        <button type="button" class="button" (click)="preview.set(null)">Change quantity</button>
+      </div>
+    }
+  } @else {
+    <p class="muted">Loading…</p>
+  }
+</div>

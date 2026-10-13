@@ -10,7 +10,7 @@ Run it with:  python -m flask --app web run
 """
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from functools import wraps
 
@@ -23,7 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from portfolio_tracker import charts, config, operations
 from portfolio_tracker.errors import InsufficientFunds, MarketDataUnavailable, ValidationError
-from portfolio_tracker.models import history, portfolio, stocks, users, watchlist
+from portfolio_tracker.models import history, portfolio, users, watchlist
 from portfolio_tracker.services import assistant, market_data
 
 log = logging.getLogger(__name__)
@@ -576,8 +576,6 @@ def stock_detail(symbol):
     """One company: its price now, a chart of the range you picked, and
     your position in it if you have one."""
     symbol = symbol.strip().upper()
-    window = charts.normalise_range(request.args.get("range"))
-    spec = charts.RANGES[window]
 
     try:
         quote = operations.look_up(g.user_id, symbol)
@@ -585,33 +583,8 @@ def stock_detail(symbol):
         flash(str(exc), "error")
         return redirect(url_for("buy_start", symbol=symbol))
 
-    since = None
-    if spec["days"] is not None:
-        since = datetime.now(timezone.utc) - timedelta(days=spec["days"])
-
-    stored_since = None
-    partial = False
-    if spec["intraday"]:
-        # Trading sessions, not wall-clock hours: see get_intraday_sessions.
-        series = [(ts, close) for ts, close in
-                  history.get_intraday_sessions(symbol, spec["days"])]
-    else:
-        series = [(day, close) for day, close in
-                  history.get_series(symbol, since.date() if since else None)]
-        # A chart can have plenty of points and still not cover its range:
-        # six months stored draws as six months under "1 year" or "All time".
-        # Unless full history is known to be loaded, check the stored span.
-        if series and not stocks.full_history_loaded(symbol):
-            stored_since = history.earliest_date(symbol)
-            if window == "all":
-                partial = True
-            elif since is not None and stored_since is not None:
-                # A week of slack covers weekends and market holidays at the
-                # start of a range.
-                partial = stored_since > since.date() + timedelta(days=7)
-
-    needs_fetch = len(series) < 2 or partial
-    chart = charts.build(series, window=window)
+    priced = operations.price_chart(symbol, request.args.get("range"))
+    chart = priced.chart
 
     return render_template(
         "stock.html",
@@ -624,13 +597,13 @@ def stock_detail(symbol):
         earliest_available=market_data.EARLIEST_AVAILABLE,
         chart=chart,
         readouts=charts.readouts(chart),
-        window=window,
+        window=priced.window,
         ranges=charts.RANGES,
-        range_label=spec["label"],
-        intraday=spec["intraday"],
-        needs_fetch=needs_fetch,
-        partial=partial,
-        stored_since=stored_since,
+        range_label=priced.spec["label"],
+        intraday=priced.spec["intraday"],
+        needs_fetch=priced.needs_fetch,
+        partial=priced.partial,
+        stored_since=priced.stored_since,
         # Taken from the plotted window itself. These previously came from a
         # separate query that, for 1D and 5D, ran over ALL stored history —
         # labelling a 1980 split-adjusted $0.04 as the one-day low.
@@ -645,30 +618,12 @@ def stock_fetch(symbol):
     """Pull the data behind whichever chart is empty, then come back to it."""
     symbol = symbol.strip().upper()
     window = charts.normalise_range(request.form.get("range"))
-    spec = charts.RANGES[window]
 
-    # Price history rows reference stocks(symbol). A company you have only
-    # looked at — never bought — has no stocks row yet, so the insert would
-    # fail its foreign key. Register it from a live quote first.
     try:
-        quote = operations.look_up(g.user_id, symbol)
+        fetched = operations.fetch_chart_data(g.user_id, symbol, window)
     except ValidationError as exc:
         flash(str(exc), "error")
         return redirect(url_for("stock_detail", symbol=symbol, range=window))
-    stocks.upsert_stock(quote.symbol, quote.company_name, quote.price)
-
-    try:
-        if spec["intraday"]:
-            # 1-minute bars only reach back about a week; 5 days needs a
-            # coarser interval to cover the span at all.
-            period, interval = ("1d", "5m") if window == "1d" else ("5d", "30m")
-            added = history.load_intraday_for_symbol(symbol, period, interval)
-            noun = "intraday points"
-        else:
-            # "max" backfills the long ranges and records that history is now
-            # complete; already-stored days are skipped, not duplicated.
-            added = history.load_full_history_for_symbol(symbol)
-            noun = "days"
     except MarketDataUnavailable:
         # Already logged by market_data, with the real error.
         flash(f"Could not fetch prices for {symbol}. The market data service "
@@ -680,7 +635,7 @@ def stock_fetch(symbol):
               "side; try again later.", "error")
         return redirect(url_for("stock_detail", symbol=symbol, range=window))
 
-    flash(f"Fetched {added} new {noun} for {symbol}.", "success")
+    flash(f"Fetched {fetched.added} new {fetched.noun} for {symbol}.", "success")
     return redirect(url_for("stock_detail", symbol=symbol, range=window))
 
 

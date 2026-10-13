@@ -1,0 +1,142 @@
+<header class="page-head">
+  <h1>Activity</h1>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }} <button class="link" (click)="load()">Try again</button></p>
+}
+
+@if (data(); as log) {
+  @if (log.total) {
+    <section class="tiles" aria-label="Trading summary">
+      <div class="tile">
+        <span class="tile-label">Trades recorded</span>
+        <span class="tile-value">{{ log.total }}</span>
+        <span class="tile-sub">Buys and sells together</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Realized gain or loss</span>
+        <span class="tile-value"><app-delta [amount]="log.realized_total" /></span>
+        <span class="tile-sub">Money actually banked by selling</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Every trade</h2>
+      <p class="muted">Newest first</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Holding</th>
+              <th scope="col">Side</th>
+              <th scope="col" class="num">Shares</th>
+              <th scope="col" class="num">Price</th>
+              <th scope="col" class="num">Value</th>
+              <th scope="col" class="num">Realized</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of log.trades; track t.id) {
+              <tr>
+                <td>
+                  {{ t.traded_at | when }}
+                  @if (t.opening) { <span class="company">Opening position</span> }
+                </td>
+                <td>
+                  <a [routerLink]="['/stock', t.symbol]" class="symbol">{{ t.symbol }}</a>
+                  <span class="company">{{ t.company_name }}</span>
+                </td>
+                <td><span class="side" [class]="t.side">{{ t.side === 'buy' ? 'Bought' : 'Sold' }}</span></td>
+                <td class="num">{{ t.shares | shares }}</td>
+                <td class="num">{{ t.price | money }}</td>
+                <td class="num">{{ t.total_value | money }}</td>
+                <td class="num">
+                  @if (t.gain !== null) { <app-delta [amount]="t.gain" /> } @else { — }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (log.pages > 1) {
+        <nav class="pager" aria-label="Trade history pages">
+          @if (log.page > 1) {
+            <a class="button small" rel="prev" routerLink="/trades" [queryParams]="{ page: log.page - 1 }">Newer</a>
+          } @else {
+            <span class="button small disabled" aria-hidden="true">Newer</span>
+          }
+          <span class="muted">
+            Page {{ log.page }} of {{ log.pages }}
+            <span class="visually-hidden">, {{ log.total }} trades in total</span>
+          </span>
+          @if (log.page < log.pages) {
+            <a class="button small" rel="next" routerLink="/trades" [queryParams]="{ page: log.page + 1 }">Older</a>
+          } @else {
+            <span class="button small disabled" aria-hidden="true">Older</span>
+          }
+        </nav>
+      }
+    </section>
+
+    @if (log.closed_positions.length) {
+      <section class="panel">
+        <h2>Closed out</h2>
+        <p class="muted">Sold in full, nothing still held</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Holding</th>
+                <th scope="col" class="num">Shares sold</th>
+                <th scope="col" class="num">Proceeds</th>
+                <th scope="col" class="num">Realized</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of log.closed_positions; track c.symbol) {
+                <tr>
+                  <th scope="row"><a [routerLink]="['/stock', c.symbol]" class="symbol">{{ c.symbol }}</a></th>
+                  <td class="num">{{ c.shares_sold | shares }}</td>
+                  <td class="num">{{ c.proceeds | money }}</td>
+                  <td class="num"><app-delta [amount]="c.realized" /></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
+    <section class="panel glossary">
+      <h2>In plain words</h2>
+      <dl>
+        <dt>Realized</dt>
+        <dd>
+          What a sale actually earned: the price you sold at, less what those
+          shares had cost you on average. A gain only becomes real money once
+          you sell, which is why a buy has no figure here.
+        </dd>
+        <dt>Opening position</dt>
+        <dd>
+          A holding you already had before this log existed. The shares and
+          average cost are real; the date is the day your account was opened,
+          because the original purchase was never recorded.
+        </dd>
+      </dl>
+    </section>
+  } @else {
+    <section class="panel">
+      <h2>No trades yet</h2>
+      <p class="empty">
+        Every buy and sell is recorded here as it happens, with what you paid,
+        what you got, and what each sale actually earned.
+        <a routerLink="/buy">Buy your first shares</a>.
+      </p>
+    </section>
+  }
+} @else if (!error()) {
+  <p class="muted">Loading your trades…</p>
+}

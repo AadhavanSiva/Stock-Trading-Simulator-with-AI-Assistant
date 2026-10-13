@@ -1,0 +1,137 @@
+<header class="page-head">
+  <h1>Portfolio</h1>
+  <div class="actions">
+    <a class="button primary" routerLink="/buy">Buy</a>
+    <a class="button" routerLink="/sell">Sell</a>
+  </div>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }} <button class="link" (click)="load()">Try again</button></p>
+}
+
+@if (data(); as p) {
+  <section class="tiles" aria-label="Account summary">
+    <div class="tile">
+      <span class="tile-label">Net worth</span>
+      <span class="tile-value">{{ p.net_worth | money }}</span>
+      <span class="tile-sub">
+        {{ p.total_return | percent }} since you started with {{ p.starting_cash | money }}
+      </span>
+    </div>
+    <div class="tile">
+      <span class="tile-label">Cash</span>
+      <span class="tile-value">{{ p.cash | money }}</span>
+    </div>
+    <div class="tile">
+      <span class="tile-label">Holdings</span>
+      <span class="tile-value">{{ p.holdings_value | money }}</span>
+      <span class="tile-sub"><app-delta [amount]="p.total_gain" [percent]="p.total_percent" /> unrealized</span>
+    </div>
+    <div class="tile">
+      <span class="tile-label">Today</span>
+      <span class="tile-value">
+        @if (p.todays_change !== null) {
+          <app-delta [amount]="p.todays_change" [percent]="p.todays_percent" />
+        } @else { — }
+      </span>
+      <span class="tile-sub">Realized so far: <app-delta [amount]="p.realized_total" /></span>
+    </div>
+  </section>
+
+  @if (p.performance; as perf) {
+    <section class="panel">
+      <h2>Account value</h2>
+      <p class="muted">
+        {{ perf.start_value | money }} → {{ perf.end_value | money }}
+        <app-delta [amount]="perf.change" [percent]="perf.percent" />
+      </p>
+      <app-price-chart [chart]="perf.chart" />
+    </section>
+  }
+
+  <section class="panel">
+    <h2>Holdings</h2>
+    @if (p.holdings.length) {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Stock</th>
+              <th scope="col" class="num">Shares</th>
+              <th scope="col" class="num">Avg cost</th>
+              <th scope="col" class="num">Price</th>
+              <th scope="col" class="num">Value</th>
+              <th scope="col" class="num">Gain / loss</th>
+              <th scope="col" class="num">Today</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (h of p.holdings; track h.symbol) {
+              <tr>
+                <th scope="row">
+                  <a [routerLink]="['/stock', h.symbol]" class="symbol">{{ h.symbol }}</a>
+                  <span class="company">{{ h.company_name }}</span>
+                </th>
+                <td class="num">{{ h.shares | shares }}</td>
+                <td class="num">{{ h.purchase_price | money }}</td>
+                <td class="num">{{ h.current_price | money }}</td>
+                <td class="num">{{ h.value | money }}</td>
+                <td class="num"><app-delta [amount]="h.gain_loss" [percent]="h.percent" /></td>
+                <td class="num"><app-delta [amount]="h.todays_change" [percent]="h.todays_percent" /></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (p.unpriced.length) {
+        <p class="muted">Not priced yet: {{ p.unpriced.join(', ') }}. They're left out of the totals.</p>
+      }
+    } @else {
+      <p class="empty">You don't own anything yet. <a routerLink="/buy">Buy your first stock</a>.</p>
+    }
+    @if (p.prices_as_of) {
+      <p class="as-of">
+        Prices as of {{ p.prices_as_of | when }}, and delayed by the data provider.
+        <a routerLink="/actions">Refresh now</a>
+      </p>
+    }
+  </section>
+
+  @if (p.closed_positions.length) {
+    <section class="panel">
+      <h2>Closed positions</h2>
+      <ul class="plain-list">
+        @for (c of p.closed_positions; track c.symbol) {
+          <li>
+            <a [routerLink]="['/stock', c.symbol]" class="symbol">{{ c.symbol }}</a>
+            sold {{ c.shares_sold | shares }} shares for {{ c.proceeds | money }},
+            realized <app-delta [amount]="c.realized" />
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  <section class="panel">
+    <h2>Recent activity</h2>
+    @if (p.activity.length) {
+      <ul class="plain-list">
+        @for (t of p.activity; track t.id) {
+          <li>
+            <span class="side" [class]="t.side">{{ t.side === 'buy' ? 'Bought' : 'Sold' }}</span>
+            {{ t.shares | shares }} <a [routerLink]="['/stock', t.symbol]" class="symbol">{{ t.symbol }}</a>
+            at {{ t.price | money }} — {{ t.total_value | money }}
+            @if (t.gain !== null) { (<app-delta [amount]="t.gain" />) }
+            <span class="muted">· {{ t.traded_at | when }}</span>
+          </li>
+        }
+      </ul>
+      <p class="as-of"><a routerLink="/trades">See every trade</a></p>
+    } @else {
+      <p class="empty">No trades yet.</p>
+    }
+  </section>
+} @else if (!error()) {
+  <p class="muted">Loading your portfolio…</p>
+}

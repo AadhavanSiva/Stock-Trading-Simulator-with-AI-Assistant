@@ -1,0 +1,74 @@
+<section class="entry">
+  <div class="panel entry-panel">
+    @if (mode() === 'signup') {
+      <p class="label label-mark">Open an account</p>
+      <h1>Start with @if (config(); as c) { {{ c.starting_cash | money }} } @else { practice money }</h1>
+      <p class="lede">Pretend money, real prices. Nothing to pay, ever.</p>
+    } @else {
+      <p class="label label-mark">Welcome back</p>
+      <h1>Log in</h1>
+      <p class="lede">Pick up where you left off.</p>
+    }
+
+    @if (error()) {
+      <p class="form-error" role="alert">{{ error() }}</p>
+    }
+
+    @if (config(); as c) {
+      @if (c.google_client_id) {
+        <div #googleButton class="google-button" [class.busy]="busy()"></div>
+      }
+
+      @if (c.dev_login) {
+        <form class="dev-login" (ngSubmit)="signInLocally()">
+          <p class="notice-inline">
+            <strong>Local sign-in is on.</strong> It accepts any email and verifies nothing.
+            Turn off <code>ALLOW_DEV_LOGIN</code> when you're done.
+          </p>
+          <label for="dev-email">Email</label>
+          <input id="dev-email" name="email" type="email" autocomplete="email"
+                 [(ngModel)]="email" required />
+          <button type="submit" class="button primary" [disabled]="busy()">Sign in locally</button>
+        </form>
+      }
+
+      @if (!c.google_client_id && !c.dev_login) {
+        <div class="setup">
+          <p><strong>Google sign-in isn't configured yet.</strong></p>
+          <ol>
+            <li>In Google Cloud Console, create an OAuth client ID of type <em>Web application</em>.</li>
+            <li>Under <em>Authorized JavaScript origins</em>, add <code>{{ origin }}</code>.</li>
+            <li>Put the client ID and secret in <code>.env</code> as
+              <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, then restart the API.</li>
+          </ol>
+          <p>Or set <code>ALLOW_DEV_LOGIN=1</code> in <code>.env</code> to try the app locally first.</p>
+        </div>
+      }
+    } @else if (!error()) {
+      <p class="muted">Loading…</p>
+    }
+
+    @if (mode() === 'signup') {
+      <ul class="checks">
+        <li>Your account is created the first time you sign in</li>
+        <li>Google is asked only for your name and email</li>
+        <li>No card, no cost, no real money anywhere</li>
+      </ul>
+      <!-- Stated before the account exists, not buried afterwards: this is
+           the moment the terms are actually being agreed to. -->
+      <p class="faint">
+        This is a simulation using delayed prices. No real money is involved
+        and nothing here is investment advice. By opening an account you agree
+        to the <a routerLink="/terms">Terms of Service</a> and the
+        <a routerLink="/privacy">Privacy Policy</a>.
+      </p>
+      <p class="muted">Already have an account? <a routerLink="/login">Log in</a></p>
+    } @else {
+      <p class="hint">
+        Use the same Google account you signed up with — that is what your
+        portfolio is attached to.
+      </p>
+      <p class="muted">New here? <a routerLink="/signup">Open an account</a></p>
+    }
+  </div>
+</section>

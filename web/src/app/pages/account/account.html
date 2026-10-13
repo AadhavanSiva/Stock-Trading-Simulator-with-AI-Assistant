@@ -1,0 +1,109 @@
+<header class="page-head">
+  <h1>Account</h1>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (data(); as a) {
+  <section class="panel">
+    <h2>Signed in as</h2>
+    <dl class="facts">
+      <dt>Name</dt><dd>{{ a.display_name }}</dd>
+      <dt>Email</dt><dd>{{ a.email }}</dd>
+      <dt>Cash</dt><dd>{{ a.cash | money }}</dd>
+      <dt>Trades recorded</dt><dd>{{ a.trade_count }}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Leaderboard</h2>
+    <p class="muted">{{ a.leaderboard_opt_in ? 'You are listed' : 'Not listed' }}</p>
+    <p>
+      The leaderboard ranks players by total account value. Taking part is
+      optional and off unless you turn it on.
+    </p>
+    <p class="muted">
+      If you join, other players see <strong>only</strong> the name you choose
+      here, your total account value and your percent return. They never see
+      your real name, your email address, what you hold, what you have traded,
+      or how much cash you have. You can leave at any time.
+    </p>
+    @if (a.standing; as standing) {
+      <p class="muted">
+        You {{ a.leaderboard_opt_in ? '' : 'would' }} currently rank
+        <strong>{{ standing.rank }}</strong> of {{ standing.participants }}.
+      </p>
+    }
+
+    @if (boardError()) {
+      <p class="form-error" role="alert">{{ boardError() }}</p>
+    }
+    @if (boardSaved()) {
+      <p class="notice success" role="status">{{ boardSaved() }}</p>
+    }
+    <form class="narrow" (ngSubmit)="saveLeaderboard()">
+      <label for="leaderboard-name">Name to appear under</label>
+      <input type="text" id="leaderboard-name" name="leaderboard_name" [(ngModel)]="leaderboardName"
+             [attr.maxlength]="a.leaderboard_name_max" autocomplete="off"
+             aria-describedby="leaderboard-name-help" />
+      <p class="hint" id="leaderboard-name-help">
+        A nickname, not your real name or email address — this is the only
+        thing other players see. {{ a.leaderboard_name_max }} characters at most.
+      </p>
+      <label class="checkline">
+        <input type="checkbox" name="opt_in" [(ngModel)]="optIn" />
+        <span>Show me on the leaderboard</span>
+      </label>
+      <button type="submit" class="button" [disabled]="busy()">Save leaderboard setting</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Take your data with you</h2>
+    <p>
+      A JSON file containing your account details, every holding with what you
+      paid for it, and your complete trade history. It is your data, in a
+      format you can read or load somewhere else — not a screenshot of it.
+    </p>
+    <p class="muted">
+      Market prices are left out. Those are shared reference data that every
+      account sees, not anything particular to you.
+    </p>
+    @if (exportError()) {
+      <p class="form-error" role="alert">{{ exportError() }}</p>
+    }
+    <button type="button" class="button" (click)="download()">Download my data</button>
+  </section>
+
+  <section class="panel danger">
+    <h2>Delete this account</h2>
+    <p>
+      This removes your account, your cash balance, every position you hold and
+      your entire trade history. It happens in one step and
+      <strong>cannot be undone</strong> — there is no backup to restore from and
+      no way for anyone to recover it for you.
+    </p>
+    <p class="muted">
+      If you only want a copy of what is here, download your data first. The
+      download above stays available until the moment you delete.
+    </p>
+    @if (deleteError()) {
+      <p class="form-error" role="alert">{{ deleteError() }}</p>
+    }
+    <form class="narrow" (ngSubmit)="deleteAccount()">
+      <label for="confirmation">Type <strong>{{ a.delete_confirmation }}</strong> to confirm</label>
+      <input type="text" id="confirmation" name="confirmation" [(ngModel)]="confirmation"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             aria-describedby="confirmation-help" required />
+      <p class="hint" id="confirmation-help">
+        Typing the word is deliberate: a button on its own is one mis-click
+        away from losing everything.
+      </p>
+      <button type="submit" class="button danger" [disabled]="busy()">Delete my account permanently</button>
+    </form>
+  </section>
+} @else if (!error()) {
+  <p class="muted">Loading your account…</p>
+}

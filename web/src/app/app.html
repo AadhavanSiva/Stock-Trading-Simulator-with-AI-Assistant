@@ -1,0 +1,64 @@
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="bar">
+    <a routerLink="/" class="brand">Portfolio Tracker</a>
+    @if (auth.user(); as user) {
+      <nav aria-label="Main">
+        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Portfolio</a>
+        <a routerLink="/balance" routerLinkActive="active">Balance</a>
+        <a routerLink="/trades" routerLinkActive="active">Activity</a>
+        <a routerLink="/history" routerLinkActive="active">History</a>
+        <a routerLink="/watchlist" routerLinkActive="active">Watchlist</a>
+        <a routerLink="/leaderboard" routerLinkActive="active">Leaderboard</a>
+        <a routerLink="/buy" routerLinkActive="active">Buy</a>
+        <a routerLink="/sell" routerLinkActive="active">Sell</a>
+        <a routerLink="/search" routerLinkActive="active">Search</a>
+        <a routerLink="/actions" routerLinkActive="active">Update data</a>
+      </nav>
+      <div class="account">
+        <span class="cash" title="Cash available">{{ user.cash | money }}</span>
+        <a class="who" routerLink="/account" routerLinkActive="active" title="Your account">{{ user.display_name }}</a>
+        <button type="button" class="link" (click)="auth.signOut()">Sign out</button>
+      </div>
+    } @else {
+      <div class="account">
+        <a routerLink="/login">Log in</a>
+        <a class="button small primary" routerLink="/signup">Open an account</a>
+      </div>
+    }
+  </div>
+</header>
+
+<main id="main">
+  @if (notices.notices().length) {
+    <div class="notices" aria-live="polite">
+      @for (n of notices.notices(); track n.id) {
+        <p class="notice" [class]="n.kind">
+          {{ n.text }}
+          <button type="button" class="dismiss" (click)="notices.dismiss(n.id)" aria-label="Dismiss">×</button>
+        </p>
+      }
+    </div>
+  }
+  <router-outlet />
+</main>
+
+@if (auth.user()) {
+  <app-ask-panel />
+}
+
+<footer class="site-footer">
+  <!-- Above the links, not folded into them: someone has to be able to
+       learn this without clicking anything, on whatever page they landed on. -->
+  <p>
+    <strong>A simulation.</strong> No real money is involved and nothing can be
+    bought or sold here. Prices come from Alpaca's IEX feed and are delayed.
+    Nothing on this site is investment advice.
+  </p>
+  <nav aria-label="Policies">
+    <a routerLink="/terms">Terms of Service</a>
+    <a routerLink="/privacy">Privacy Policy</a>
+    <a routerLink="/disclaimer">Disclaimer</a>
+  </nav>
+</footer>

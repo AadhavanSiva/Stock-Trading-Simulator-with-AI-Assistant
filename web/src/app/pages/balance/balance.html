@@ -1,0 +1,102 @@
+<header class="page-head">
+  <div>
+    <h1>Balance</h1>
+    <p class="lede">
+      Your money sits in two places: cash you have not invested, and the
+      companies you have bought. Together they are what the account is worth.
+    </p>
+  </div>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }} <button class="link" (click)="load()">Try again</button></p>
+}
+
+@if (data(); as p) {
+  <section class="tiles" aria-label="Where your money is">
+    <div class="tile">
+      <span class="tile-label">Cash</span>
+      <span class="tile-value">{{ p.cash | money }}</span>
+      <span class="tile-sub">Ready to invest.</span>
+    </div>
+    <div class="tile">
+      <span class="tile-label">Investments</span>
+      <span class="tile-value">{{ p.holdings_value | money }}</span>
+      <span class="tile-sub">
+        @if (p.holdings.length) {
+          Across {{ p.holdings.length }} {{ p.holdings.length === 1 ? 'company' : 'companies' }}.
+        } @else {
+          Nothing invested yet.
+        }
+      </span>
+    </div>
+    <div class="tile">
+      <span class="tile-label">Account total</span>
+      <span class="tile-value">{{ p.net_worth | money }}</span>
+      <span class="tile-sub"><app-delta [amount]="p.total_gain" /> on what you hold</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    @if (p.holdings.length) {
+      <h2>Where it is invested</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Investment</th>
+              <th scope="col" class="num">Shares</th>
+              <th scope="col" class="num">Spent</th>
+              <th scope="col" class="num">Worth</th>
+              <th scope="col" class="num">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (h of p.holdings; track h.symbol) {
+              <tr>
+                <th scope="row">
+                  <a [routerLink]="['/stock', h.symbol]" class="symbol">{{ h.symbol }}</a>
+                  <span class="company">{{ h.company_name }}</span>
+                </th>
+                <td class="num">{{ h.shares | shares }}</td>
+                <td class="num">{{ h.cost | money }}</td>
+                <td class="num">{{ h.value | money }}</td>
+                <td class="num"><app-delta [amount]="h.gain_loss" /></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (p.prices_as_of) {
+        <p class="as-of">
+          Prices as of {{ p.prices_as_of | when }}, and delayed by the data provider.
+          <a routerLink="/actions">Refresh now</a>
+        </p>
+      }
+    } @else {
+      <h2>All of it is still cash</h2>
+      <p class="empty">
+        None of your {{ p.cash | money }} is invested yet. Buying shares moves
+        money out of cash and into a company — if that company is worth more
+        later, so is your account. <a routerLink="/buy">Buy your first shares</a>.
+      </p>
+    }
+  </section>
+
+  <section class="panel glossary">
+    <h2>In plain words</h2>
+    <dl>
+      <dt>Cash</dt>
+      <dd>Money you can spend now. Buying reduces it; selling adds to it.</dd>
+      <dt>Investments</dt>
+      <dd>What your shares would fetch at today's prices. This moves whenever the market does.</dd>
+      <dt>Account total</dt>
+      <dd>
+        Cash plus investments. The honest measure — a large cash balance is
+        not progress if your investments fell to produce it.
+      </dd>
+    </dl>
+  </section>
+} @else if (!error()) {
+  <p class="muted">Loading your balance…</p>
+}

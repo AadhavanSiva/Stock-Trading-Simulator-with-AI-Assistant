@@ -1,0 +1,84 @@
+<header class="page-head">
+  <div>
+    <h1>Price history</h1>
+    <p class="lede">
+      Where today's price sits against the recent past. A price is only high
+      or low compared to something.
+    </p>
+  </div>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }} <button class="link" (click)="load()">Try again</button></p>
+}
+
+@if (data(); as h) {
+  @if (h.rows.length) {
+    <section class="panel">
+      <h2>The last {{ h.days }} days</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Investment</th>
+              <th scope="col" class="num">Today</th>
+              <th scope="col" class="num">{{ h.days }}-day average</th>
+              <th scope="col" class="num">{{ h.days }}-day high</th>
+              <th scope="col" class="num">{{ h.days }}-day low</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of h.rows; track row.symbol) {
+              <tr>
+                <th scope="row">
+                  <a [routerLink]="['/stock', row.symbol]" class="symbol">{{ row.symbol }}</a>
+                  <span class="company">{{ row.company_name }}</span>
+                </th>
+                <td class="num">{{ row.current_price | money }}</td>
+                <td class="num">{{ row.average | money }}</td>
+                <td class="num">{{ row.high | money }}</td>
+                <td class="num">{{ row.low | money }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="as-of">
+        A dash means that company's past prices have not been downloaded yet.
+        <a routerLink="/actions">Fetch past prices</a> to fill them in.
+      </p>
+    </section>
+
+    <section class="panel glossary">
+      <h2>In plain words</h2>
+      <dl>
+        <dt>{{ h.days }}-day average</dt>
+        <dd>
+          The typical closing price over the last {{ h.days }} days. Comparing
+          today against it tells you whether the price is currently running
+          high or low for this company.
+        </dd>
+        <dt>{{ h.days }}-day high and low</dt>
+        <dd>
+          The best and worst closing prices over the same {{ h.days }} days as
+          the average beside them. A wide gap means a bumpier ride. These are
+          deliberately not all-time figures: a price from before a stock split
+          says nothing about whether today is dear or cheap.
+        </dd>
+        <dt>Closing price</dt>
+        <dd>The price a share finished at when the market shut for the day.</dd>
+      </dl>
+    </section>
+  } @else {
+    <section class="panel">
+      <h2>No history to show yet</h2>
+      <p class="empty">
+        Once you own something, this page shows how its price has moved over
+        time — so today's number has something to be measured against.
+        <a routerLink="/buy">Buy your first shares</a>.
+      </p>
+    </section>
+  }
+} @else if (!error()) {
+  <p class="muted">Loading price history…</p>
+}

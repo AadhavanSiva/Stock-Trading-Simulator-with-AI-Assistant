@@ -1,34 +1,59 @@
-# Render Blueprint: New > Blueprint in the Render dashboard, pick this repo.
+# Render Blueprint for the Angular UI + FastAPI front end.
+#
+# New > Blueprint in the Render dashboard, pick this repo: Render reads this
+# file by default. render.flask.yaml beside it deploys the Flask app as a
+# separate service. See README, "Deploying".
+#
+# One service serves both halves from one origin: FastAPI answers /api and
+# hands out the built Angular files for everything else (api/spa.py). So
+# there is no CORS to configure and one address to register with Google.
+#
 # Values marked "sync: false" are secrets; Render asks for them when the
-# Blueprint is created and they never live in this file. See README, "Deploying".
+# Blueprint is created and they never live in this file.
 services:
   - type: web
-    name: stock-trading-simulator
+    name: stock-trading-simulator-angular
     runtime: python
     plan: free
-    # init_db applies schema.sql and then every migration, both idempotent,
-    # so running it on each build is safe and leaves a fresh database and an
-    # upgraded one with the same shape. See README, "Upgrading an existing
-    # database".
-    buildCommand: pip install -r requirements.txt && python -m portfolio_tracker.init_db
-    # One process, so the 30 s quote cache is shared; threads for concurrent
-    # requests. The timeout exceeds the assistant's 120 s Gemini time limit.
-    startCommand: gunicorn web:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 150
+    # Three steps, in the order a failure is cheapest:
+    #   1. the API's Python dependencies;
+    #   2. init_db, which applies schema.sql and then every migration, both
+    #      idempotent, so it is safe on every build and safe to run against
+    #      a database the Flask service also builds against;
+    #   3. the Angular build into web/dist, which the API then serves. Node
+    #      and npm are part of Render's Python runtime; `npm ci` installs
+    #      exactly what package-lock.json names.
+    buildCommand: pip install -r requirements.txt && python -m portfolio_tracker.init_db && cd web && npm ci && npm run build
+    # One process, so the 30 s quote cache is shared. Handlers are sync and
+    # run in uvicorn's thread pool, so one slow market-data or assistant
+    # call does not hold up the rest.
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/healthz
     envVars:
-      # Matches CI and local development. Keeping one version across all
-      # three is what makes CI's result mean anything about production.
+      # Matches CI and the Flask service.
       - key: PYTHON_VERSION
         value: 3.13.15
+      # Angular 20 needs Node 20.19+ or 22.12+.
+      - key: NODE_VERSION
+        value: 22.12.0
+      # Turns on the production checks: the API refuses to start without
+      # JWT_SECRET_KEY or with dev login enabled, and stops publishing
+      # /api/docs.
       - key: ENVIRONMENT
         value: production
-      - key: BEHIND_HTTPS_PROXY
-        value: "1"
-      - key: FLASK_SECRET_KEY
+      # Signs the API's access tokens. Generated once and kept, so a
+      # redeploy does not sign everyone out.
+      - key: JWT_SECRET_KEY
         generateValue: true
+      # The same database as the Flask service, if both are deployed: an
+      # account, its cash and its trades are then the same in either.
       - key: DATABASE_URL
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      # Never used by this front end's sign-in, which verifies Google's ID
+      # token and needs no secret, but the shared settings count Google as
+      # configured only when both values are present.
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GEMINI_API_KEY

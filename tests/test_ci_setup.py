@@ -59,9 +59,16 @@ class TestWorkflow:
 
     def test_scans_the_app_code_with_bandit(self):
         text = self.workflow()
-        assert "python -m bandit -r portfolio_tracker web.py main.py" in text
+        assert "python -m bandit -r portfolio_tracker api web.py main.py" in text
         with open(os.path.join(ROOT, "requirements-dev.txt"), encoding="utf-8") as fh:
             assert re.search(r"^bandit==[\d.]+$", fh.read(), re.M)
+
+    def test_builds_and_tests_the_angular_ui(self):
+        text = self.workflow()
+        assert "working-directory: web" in text
+        assert "npm ci" in text
+        assert "npx ng build" in text
+        assert "npm run test:ci" in text
 
     def test_installs_the_dev_requirements_and_runs_pytest(self):
         text = self.workflow()

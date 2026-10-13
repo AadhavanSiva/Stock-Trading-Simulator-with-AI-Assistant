@@ -54,6 +54,7 @@ __all__ = [
     "leaderboard_standings", "my_standing", "set_leaderboard_participation",
     "watch", "unwatch", "watchlist_rows", "refresh_watchlist",
     "search_symbols", "ensure_prices_fresh", "prices_as_of",
+    "price_chart", "fetch_chart_data",
 ]
 
 
@@ -1015,7 +1016,7 @@ _refresh_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="price-refr
 # ---------------------------------------------------------------------
 # THIS IS PER PROCESS, AND SO IS THE QUOTE CACHE IN services/market_data.
 #
-# At one worker — which is what render.yaml starts, deliberately — that
+# At one worker — which is what each Render Blueprint starts, deliberately — that
 # is the whole story: ten simultaneous viewers of the same holding cause
 # one refresh, because the second through tenth find the symbol already
 # claimed here.
@@ -1109,3 +1110,87 @@ def ensure_prices_fresh(user_id, symbols):
 def prices_as_of(symbols):
     """When the oldest of these prices was fetched, or None."""
     return stocks.prices_as_of(symbols)
+
+
+# ------------------------------------------------------------ stock charts
+
+PriceChart = namedtuple(
+    "PriceChart", "window spec chart needs_fetch partial stored_since",
+)
+
+
+def price_chart(symbol, window):
+    """The stored price series for one range, projected for drawing.
+
+    Shared by the Flask stock page and the JSON API so the two can never
+    disagree about what "1 year" covers or when a chart is incomplete.
+    `window` is normalised, so any value is safe to pass.
+    """
+    symbol = (symbol or "").strip().upper()
+    window = charts.normalise_range(window)
+    spec = charts.RANGES[window]
+
+    since = None
+    if spec["days"] is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=spec["days"])
+
+    stored_since = None
+    partial = False
+    if spec["intraday"]:
+        # Trading sessions, not wall-clock hours: see get_intraday_sessions.
+        series = [(ts, close) for ts, close in
+                  history.get_intraday_sessions(symbol, spec["days"])]
+    else:
+        series = [(day, close) for day, close in
+                  history.get_series(symbol, since.date() if since else None)]
+        # A chart can have plenty of points and still not cover its range:
+        # six months stored draws as six months under "1 year" or "All time".
+        # Unless full history is known to be loaded, check the stored span.
+        if series and not stocks.full_history_loaded(symbol):
+            stored_since = history.earliest_date(symbol)
+            if window == "all":
+                partial = True
+            elif since is not None and stored_since is not None:
+                # A week of slack covers weekends and market holidays at the
+                # start of a range.
+                partial = stored_since > since.date() + timedelta(days=7)
+
+    return PriceChart(
+        window=window,
+        spec=spec,
+        chart=charts.build(series, window=window),
+        needs_fetch=len(series) < 2 or partial,
+        partial=partial,
+        stored_since=stored_since,
+    )
+
+
+ChartFetch = namedtuple("ChartFetch", "symbol window added noun")
+
+
+def fetch_chart_data(user_id, symbol, window):
+    """Pull the data behind an empty or partial chart.
+
+    Raises ValidationError for a ticker that cannot be priced and lets
+    MarketDataUnavailable through, so each front end can word the failure
+    its own way.
+    """
+    window = charts.normalise_range(window)
+    # Price history rows reference stocks(symbol). A company you have only
+    # looked at — never bought — has no stocks row yet, so the insert would
+    # fail its foreign key. Register it from a live quote first.
+    quote = look_up(user_id, symbol)
+    stocks.upsert_stock(quote.symbol, quote.company_name, quote.price)
+
+    if charts.RANGES[window]["intraday"]:
+        # 1-minute bars only reach back about a week; 5 days needs a
+        # coarser interval to cover the span at all.
+        period, interval = ("1d", "5m") if window == "1d" else ("5d", "30m")
+        added = history.load_intraday_for_symbol(quote.symbol, period, interval)
+        noun = "intraday points"
+    else:
+        # "max" backfills the long ranges and records that history is now
+        # complete; already-stored days are skipped, not duplicated.
+        added = history.load_full_history_for_symbol(quote.symbol)
+        noun = "days"
+    return ChartFetch(quote.symbol, window, added, noun)
