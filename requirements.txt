@@ -5,7 +5,7 @@ requests==2.34.2
 psycopg2-binary==2.9.13
 python-dotenv==1.2.3
 # zoneinfo needs this on Windows, which ships no timezone database
-tzdata==2026.4
+tzdata==2026.6
 
 # Web interface
 Flask==3.1.3
